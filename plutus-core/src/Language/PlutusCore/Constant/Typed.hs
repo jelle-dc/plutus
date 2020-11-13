@@ -60,7 +60,7 @@ data TypeScheme term (args :: [GHC.Type]) res where
         :: KnownType term res
         => Proxy res -> TypeScheme term '[] res
     TypeSchemeArrow
-        :: KnownType term arg
+        :: (KnownType term arg, ToAnnotation term ExMemory)
         => Proxy arg -> TypeScheme term args res -> TypeScheme term (arg ': args) res
     TypeSchemeAll
         :: (KnownSymbol text, KnownNat uniq)
@@ -272,11 +272,11 @@ class KnownTypeAst uni a where
 
 -- | A constraint for \"@a@ is a 'KnownType' by means of being included in @uni@\".
 type KnownBuiltinType term a =
-    (HasConstant term, GShow (UniOf term), GEq (UniOf term), UniOf term `Includes` a)
+    (HasConstant term, GShow (UniOf term), GEq (UniOf term), UniOf term `Includes` a, ToAnnotation term ExMemory)
 
 -- See Note [KnownType's defaults]
 -- | Haskell types known to exist on the PLC side.
-class KnownTypeAst (UniOf term) a => KnownType term a where
+class (KnownTypeAst (UniOf term) a, ToAnnotation term ExMemory) => KnownType term a where
     -- | Convert a Haskell value to the corresponding PLC term.
     -- The inverse of 'readKnown'.
     makeKnown :: a -> EvaluationResult term
@@ -323,7 +323,7 @@ instance (KnownTypeAst uni fun, KnownTypeAst uni arg) => KnownTypeAst uni (TyApp
 instance KnownTypeAst uni rep => KnownTypeAst uni (Opaque term rep) where
     toTypeAst _ = toTypeAst $ Proxy @rep
 
-instance (term ~ term', KnownTypeAst (UniOf term) rep) => KnownType term (Opaque term' rep) where
+instance (term ~ term', KnownTypeAst (UniOf term) rep, ToAnnotation term ExMemory) => KnownType term (Opaque term' rep) where
     makeKnown = EvaluationSuccess . unOpaque
     readKnown = pure . Opaque
 

@@ -28,6 +28,8 @@ import           Data.Array
 import qualified Data.Kind                                        as GHC
 import           Data.Proxy
 import           GHC.TypeLits
+import Language.PlutusCore.Evaluation.Machine.ExMemory (ExMemoryUsage, ExMemory)
+import Language.PlutusCore.Universe.Core
 
 -- | The meaning of a dynamic built-in function consists of its type represented as a 'TypeScheme',
 -- its Haskell denotation and a costing function (both in uninstantiated form).
@@ -101,7 +103,7 @@ class (Bounded fun, Enum fun, Ix fun) => ToBuiltinMeaning uni fun where
 
     -- | Get the 'BuiltinMeaning' of a built-in function.
     toBuiltinMeaning
-        :: HasConstantIn uni term
+        :: (HasConstantIn uni term, Closed uni, Everywhere uni ExMemoryUsage, ToAnnotation term ExMemory)
         => fun -> BuiltinMeaning term (DynamicPart uni fun) (CostingPart uni fun)
 
 -- | Get the type of a built-in function.
@@ -192,7 +194,7 @@ instance (res ~ res', KnownType term res) => KnownMonotype term '[] res res' whe
     knownMonotype = TypeSchemeResult Proxy
 
 -- | Every term-level argument becomes as 'TypeSchemeArrow'.
-instance (KnownType term arg, KnownMonotype term args res a) =>
+instance (KnownType term arg, KnownMonotype term args res a, ToAnnotation term ExMemory) =>
             KnownMonotype term (arg ': args) res (arg -> a) where
     knownMonotype = Proxy `TypeSchemeArrow` knownMonotype
 
@@ -261,6 +263,7 @@ toStaticBuiltinMeaning
     :: forall a term dyn cost binds args res.
        ( args ~ GetArgs a, a ~ FoldArgs args res, binds ~ ToBinds (TypeScheme term args res)
        , KnownPolytype binds term args res a
+       , ToAnnotation term ExMemory
        )
     => a -> (cost -> FoldArgsEx args) -> BuiltinMeaning term dyn cost
 toStaticBuiltinMeaning = toDynamicBuiltinMeaning . const

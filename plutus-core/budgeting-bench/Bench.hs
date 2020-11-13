@@ -120,13 +120,26 @@ benchTwoInt builtinName =
     where
         numbers = expToBenchingInteger <$> expsToBench
 
+-- benchies for: TyInst, Apply, IWrap, Unwrap, BVar
+
+-- createTyInstTerm :: Integer -> Benchmark
+-- createTyInstTerm d =
+
+-- programCalibration :: [Benchmark]
+-- programCalibration = fromInterestingTermGens (\name term -> runTermBench name (_termOfTerm $ genSample seedA term))
+
+costs :: [(String, (Either (CekEvaluationException DefaultUni) (UntypedPlain UT.Term DefaultUni), CekExBudgetState))]
+costs = fromInterestingTermGens (\name term -> (name, runCekCounting mempty defaultCostModel (erase $ _termOfTerm $ genSample seedA term)))
+
 -- Creates the .csv file consumed by create-cost-model. The data in said csv is
 -- time taken for all the builtin operations, as measured by criterion.
 -- See also Note [Creation of the Cost Model]
 main :: IO ()
 main = do
     createDirectoryIfMissing True "budgeting-bench/csvs/"
-    defaultMainWith (defaultConfig { C.csvFile = Just $ "budgeting-bench/csvs/benching.csv" }) $ (benchTwoInt <$> twoIntNames) <> (benchTwoByteStrings <$> [Concatenate]) <> (benchBytestringOperations <$> [DropByteString, TakeByteString]) <> (benchHashOperations <$> [SHA2, SHA3]) <> (benchSameTwoByteStrings <$> [EqByteString, LtByteString, GtByteString]) <> [benchVerifySignature] <> benchComparison
+    Prelude.print $ costs
+    -- defaultMainWith (defaultConfig { C.csvFile = Just $ "budgeting-bench/csvs/calibration.csv" }) $ programCalibration
+    -- defaultMainWith (defaultConfig { C.csvFile = Just $ "budgeting-bench/csvs/benching.csv" }) $ (benchTwoInt <$> twoIntNames) <> (benchTwoByteStrings <$> [Concatenate]) <> (benchBytestringOperations <$> [DropByteString, TakeByteString]) <> (benchHashOperations <$> [SHA2, SHA3]) <> (benchSameTwoByteStrings <$> [EqByteString, LtByteString, GtByteString]) <> [benchVerifySignature] <> benchComparison
     pure ()
     where
         twoIntNames = [AddInteger, SubtractInteger, MultiplyInteger, DivideInteger, QuotientInteger, RemainderInteger, ModInteger, LessThanInteger, LessThanEqInteger, GreaterThanEqInteger, GreaterThanEqInteger, EqInteger]

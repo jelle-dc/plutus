@@ -35,11 +35,12 @@ import           Language.PlutusCore.Universe
 
 import           Control.Monad.Except
 import           Data.Array
+import Language.PlutusCore.Evaluation.Machine.ExMemory (ExMemoryUsage)
 
 -- | Extract the 'TypeScheme' from a 'BuiltinMeaning' and convert it to the
 -- corresponding 'Type' for each built-in function.
 builtinMeaningsToTypes
-    :: (AsTypeError err term uni fun ann, MonadError err m, ToBuiltinMeaning uni fun)
+    :: (AsTypeError err term uni fun ann, MonadError err m, ToBuiltinMeaning uni fun, Closed uni, Everywhere uni ExMemoryUsage)
     => ann -> m (BuiltinTypes uni fun)
 builtinMeaningsToTypes ann =
     runQuoteT . fmap (BuiltinTypes . Just) . sequence . tabulateArray $ \fun -> do
@@ -50,7 +51,7 @@ builtinMeaningsToTypes ann =
 -- | Get the default type checking config.
 getDefTypeCheckConfig
     :: forall term uni fun m err ann.
-       (MonadError err m, AsTypeError err term uni fun ann, ToBuiltinMeaning uni fun)
+       (MonadError err m, AsTypeError err term uni fun ann, ToBuiltinMeaning uni fun, Closed uni, Everywhere uni ExMemoryUsage)
     => ann -> m (TypeCheckConfig uni fun)
 getDefTypeCheckConfig ann = TypeCheckConfig <$> builtinMeaningsToTypes ann
 

@@ -38,6 +38,7 @@ module Language.UntypedPlutusCore.Evaluation.Machine.Cek
     , evaluateCek
     , unsafeEvaluateCek
     , readKnownCek
+    , annotateMemory
     )
 where
 
@@ -65,6 +66,10 @@ import           Control.Monad.State.Strict
 import           Data.Array
 import           Data.HashMap.Monoidal
 import           Data.Text.Prettyprint.Doc
+
+import Data.Functor.Foldable (Recursive(cata))
+import Data.Proxy (Proxy(Proxy))
+import Language.PlutusCore.Core.Type (ToAnnotation(..))
 
 {- Note [Scoping]
    The CEK machine does not rely on the global uniqueness condition, so the renamer pass is not a
@@ -101,6 +106,12 @@ data CekValue uni fun =
       [CekValue uni fun]    -- Arguments we've computed so far.
       (CekValEnv uni fun)   -- Initial environment, used for evaluating every argument
     deriving (Show, Eq) -- Eq is just for tests.
+
+instance ToAnnotation (CekValue uni fun) ExMemory where
+    toAnnotation (VCon mem _) = mem
+    toAnnotation (VDelay mem _ _) = mem
+    toAnnotation (VLamAbs mem _ _ _) = mem
+    toAnnotation (VBuiltin mem _ _ _ _ _ _) = mem
 
 type CekValEnv uni fun = UniqueMap TermUnique (CekValue uni fun)
 
@@ -245,23 +256,16 @@ instance AsConstant (CekValue uni fun) where
     asConstant (VCon _ val) = Just val
     asConstant _            = Nothing
 
-instance ToExMemory (CekValue uni fun) where
-    toExMemory = \case
-        VCon     ex _           -> ex
-        VDelay   ex _ _         -> ex
-        VLamAbs  ex _ _ _       -> ex
-        VBuiltin ex _ _ _ _ _ _ -> ex
-
 instance ExBudgetBuiltin fun (ExBudgetCategory fun) where
     exBudgetBuiltin = BBuiltin
 
 -- We only need the @Eq fun@ constraint here and not anywhere else, because in other places we have
 -- @Ix fun@ which implies @Ord fun@ which implies @Eq fun@.
-instance (Eq fun, Hashable fun, ToExMemory term) =>
+instance (Eq fun, Hashable fun) =>
             SpendBudget (CekCarryingM term uni fun) fun (ExBudgetCategory fun) term where
     spendBudget key budget = do
         modifying exBudgetStateTally
-                (<> (ExTally (singleton key budget)))
+                (<> ExTally (singleton key [budget]))
         newBudget <- exBudgetStateBudget <%= (<> budget)
         mode <- asks cekEnvBudgetMode
         case mode of
@@ -487,7 +491,7 @@ applyBuiltin ctx bn args = do
 -- | Evaluate a term using the CEK machine and keep track of costing.
 runCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> ExBudgetMode
@@ -500,12 +504,12 @@ runCek runtime mode term =
             spendBudget BAST (ExBudget 0 (termAnn memTerm))
             computeCek [] mempty memTerm
     where
-        memTerm = withMemory term
+        memTerm = annotateMemory term
 
 -- | Evaluate a term using the CEK machine in the 'Counting' mode.
 runCekCounting
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Term Name uni fun ()
@@ -515,7 +519,7 @@ runCekCounting means = runCek means Counting
 -- | Evaluate a term using the CEK machine.
 evaluateCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Term Name uni fun ()
@@ -526,7 +530,7 @@ evaluateCek runtime = fst . runCekCounting runtime
 unsafeEvaluateCek
     :: ( GShow uni, GEq uni, Typeable uni
        , Closed uni, uni `EverywhereAll` '[ExMemoryUsage, PrettyConst]
-       , Hashable fun, Ix fun, Pretty fun, Typeable fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun, Pretty fun, Typeable fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Term Name uni fun ()
@@ -537,9 +541,23 @@ unsafeEvaluateCek runtime = either throw id . extractEvaluationResult . evaluate
 readKnownCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
        , KnownType (Term Name uni fun ()) a
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Term Name uni fun ()
     -> Either (CekEvaluationException uni fun) a
 readKnownCek runtime = evaluateCek runtime >=> readKnown
+
+annotateMemory :: (Everywhere uni ExMemoryUsage, Closed uni) =>
+    Term Name uni fun () -> Term Name uni fun ExMemory
+annotateMemory = cata $ \case
+    ConstantF () som -> Constant (constructorMemoryUsage + memoryUsage som) som
+    BuiltinF () fun -> Builtin constructorMemoryUsage fun
+    VarF () name -> Var (constructorMemoryUsage + memoryUsage name) name
+    LamAbsF () name term -> LamAbs (constructorMemoryUsage + termAnn term + memoryUsage name) name term
+    ApplyF () term1 term2 -> Apply (constructorMemoryUsage + termAnn term1 + termAnn term2) term1 term2
+    DelayF () term -> Delay (constructorMemoryUsage + termAnn term) term
+    ForceF () term -> Force (constructorMemoryUsage + termAnn term) term
+    ErrorF () -> Error constructorMemoryUsage
+    where
+        constructorMemoryUsage = 1

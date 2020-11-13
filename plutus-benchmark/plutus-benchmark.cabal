@@ -147,6 +147,13 @@ benchmark validation
     , filepath -any
     , text -any
     , transformers -any
+    , pretty-show -any
+    , monoidal-containers -any
+    , lens -any
+    , cassava -any
+    , vector -any
+    , hashable -any
+    , unordered-containers -any
 
 test-suite plutus-benchmark-nofib-tests
     import: lang

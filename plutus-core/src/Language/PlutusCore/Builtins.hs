@@ -36,6 +36,7 @@ import           Flat
 import           Flat.Decoder
 import           Flat.Encoder                                               as Flat
 import           System.IO.Unsafe
+import Language.PlutusCore.Core.Type (ToAnnotation)
 
 -- TODO: I think we should have the following structure:
 --
@@ -129,7 +130,7 @@ integerToInt :: Integer -> Int
 integerToInt = fromIntegral
 
 defBuiltinsRuntime
-    :: (HasConstantIn uni term, GShow uni, GEq uni, DefaultUni <: uni)
+    :: (HasConstantIn uni term, GShow uni, GEq uni, DefaultUni <: uni, Closed uni, ToAnnotation term ExMemory, Everywhere uni ExMemoryUsage)
     => BuiltinsRuntime DefaultFun term
 defBuiltinsRuntime = toBuiltinsRuntime defDefaultFunDyn defaultCostModel
 

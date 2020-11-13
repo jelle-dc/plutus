@@ -1,3 +1,5 @@
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE FlexibleInstances    #-}
@@ -18,12 +20,12 @@ module Language.UntypedPlutusCore.Core.Type
 
 import           PlutusPrelude
 
-import qualified Language.PlutusCore.Constant                       as TPLC
 import qualified Language.PlutusCore.Core                           as TPLC
-import           Language.PlutusCore.Evaluation.Machine.ExBudgeting
 import           Language.PlutusCore.Evaluation.Machine.ExMemory
 import qualified Language.PlutusCore.Name                           as TPLC
 import           Language.PlutusCore.Universe
+import qualified Language.PlutusCore.Constant.Typed as TPLC
+import Language.PlutusCore.Core.Type (ToAnnotation)
 
 -- | The type of Untyped Plutus Core terms. Mirrors the type of Typed Plutus Core terms except
 --
@@ -67,12 +69,6 @@ instance TPLC.FromConstant (Term name uni fun ()) where
 type instance TPLC.HasUniques (Term name uni fun ann) = TPLC.HasUnique name TPLC.TermUnique
 type instance TPLC.HasUniques (Program name uni fun ann) = TPLC.HasUniques (Term name uni fun ann)
 
-instance ToExMemory (Term name uni fun ()) where
-    toExMemory _ = 0
-
-instance ToExMemory (Term name uni fun ExMemory) where
-    toExMemory = termAnn
-
 deriving via GenericExMemoryUsage (Term name uni fun ann) instance
     ( ExMemoryUsage name, ExMemoryUsage fun, ExMemoryUsage ann
     , Closed uni, uni `Everywhere` ExMemoryUsage
@@ -80,6 +76,9 @@ deriving via GenericExMemoryUsage (Term name uni fun ann) instance
 
 toTerm :: Program name uni fun ann -> Term name uni fun ann
 toTerm (Program _ _ term) = term
+
+instance ToAnnotation (Term name uni fun ann) ann where
+    toAnnotation = termAnn
 
 -- | Return the outermost annotation of a 'Term'.
 termAnn :: Term name uni fun ann -> ann

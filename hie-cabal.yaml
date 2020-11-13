@@ -39,6 +39,12 @@ cradle:
     config: { cradle: { cabal: { component: "prettyprinter-configurable:prettyprinter-configurable-test" } } }
   - path: ./prettyprinter-configurable/doctest
     config: { cradle: { cabal: { component: "prettyprinter-configurable:prettyprinter-configurable-doctest" } } }
+  - path: ./plutus-benchmark/nofib/bench
+    config: { cradle: { cabal: { component: "plutus-benchmark:nofib" } } }
+  - path: ./plutus-benchmark/nofib/exe
+    config: { cradle: { cabal: { component: "plutus-benchmark:nofib-exe" } } }
+  - path: ./plutus-benchmark/validation
+    config: { cradle: { cabal: { component: "plutus-benchmark:validation" } } }
 
   - path: ./plutus-tx/src
     config: { cradle: { cabal: { component: "lib:plutus-tx" } } }

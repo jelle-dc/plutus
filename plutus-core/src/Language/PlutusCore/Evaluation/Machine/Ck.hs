@@ -131,10 +131,6 @@ instance AsConstant (CkValue uni fun) where
     asConstant (VCon term) = asConstant term
     asConstant _           = Nothing
 
-instance ToExMemory (CkValue uni fun) where
-    toExMemory _ = 0
-
-
 data Frame uni fun
     = FrameApplyFun (CkValue uni fun)                       -- ^ @[V _]@
     | FrameApplyArg (Term TyName Name uni fun ())           -- ^ @[_ N]@

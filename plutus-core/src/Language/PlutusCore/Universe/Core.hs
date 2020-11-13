@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DefaultSignatures     #-}
@@ -43,6 +44,7 @@ import           Data.Proxy
 import           GHC.Exts
 import           Language.Haskell.TH.Lift
 import           Text.Show.Deriving
+import Data.Data (Data)
 
 {- Note [Universes]
 A universe is a collection of tags for types. It can be finite like
@@ -81,6 +83,7 @@ data Some f = forall a. Some (f a)
 
 -- | A particular type from a universe.
 newtype TypeIn uni a = TypeIn (uni a)
+    deriving (Data)
 
 -- | A value of a particular type from a universe.
 data ValueOf uni a = ValueOf (uni a) a

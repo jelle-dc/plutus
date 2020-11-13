@@ -37,6 +37,7 @@ import           GHC.Generics
 import           GHC.Integer
 import           GHC.Integer.Logarithms
 import           GHC.Prim
+import Data.Traversable.TreeLike
 
 {- Note [Memory Usage for Plutus]
 
@@ -55,17 +56,17 @@ type Plain f (uni :: GHC.Type -> GHC.Type) (fun :: GHC.Type) = f TyName Name uni
 type WithMemory f (uni :: GHC.Type -> GHC.Type) (fun :: GHC.Type) = f TyName Name uni fun ExMemory
 
 -- | Counts size in machine words (64bit for the near future)
-newtype ExMemory = ExMemory Integer
-  deriving (Eq, Ord, Show)
+newtype ExMemory = ExMemory { getExMemory :: Integer }
+  deriving (Eq, Ord, Show, Generic)
   deriving newtype (Num, NFData)
   deriving (Semigroup, Monoid) via (Sum Integer)
 -- You have to use a standalone declaration for deriving a 'PrettyBy' instance.
 -- Yes, I also hate that.
 deriving newtype instance PrettyDefaultBy config Integer => PrettyBy config ExMemory
 
--- | Counts CPU units - no fixed base, proportional.
-newtype ExCPU = ExCPU Integer
-  deriving (Eq, Ord, Show)
+-- | Counts CPU units - 1µs on $referencemachine
+newtype ExCPU = ExCPU { getExCPU :: Integer }
+  deriving (Eq, Ord, Show, Generic)
   deriving newtype (Num, NFData)
   deriving (Semigroup, Monoid) via (Sum Integer)
 deriving newtype instance PrettyDefaultBy config Integer => PrettyBy config ExCPU
@@ -155,3 +156,8 @@ instance ExMemoryUsage String where
 
 withMemory :: ExMemoryUsage (f a) => Functor f => f a -> f ExMemory
 withMemory x = fmap (const (memoryUsage x)) x
+
+-- withAstMemory ::
+--   ( Closed uni, uni `Everywhere` ExMemoryUsage, ExMemoryUsage fun
+--   ) => Plain Term uni fun -> WithMemory Term uni fun
+-- withAstMemory = _

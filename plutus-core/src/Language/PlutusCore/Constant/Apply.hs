@@ -13,6 +13,7 @@ import           Language.PlutusCore.Evaluation.Result
 
 import           Control.Monad.Except
 import           Data.Proxy
+import Language.PlutusCore.Core.Type (ToAnnotation(toAnnotation))
 
 -- | Apply a function with a known 'TypeScheme' to a list of 'Constant's (unwrapped from 'Value's).
 -- Checks that the constants are of expected types.
@@ -55,7 +56,7 @@ applyTypeSchemed name = go where
             -- Note that it is very important to feed the costing function purely,
             -- otherwise (i.e. if instead of using a pure 'toExMemory' we use a function supplying
             -- an argument to 'exF' in a monadic fashion) execution time skyrockets for some reason.
-            let exF' = exF $ toExMemory arg
+            let exF' = exF $ toAnnotation arg
             -- Apply the function to the coerced argument and proceed recursively.
             case schB of
                 (TypeSchemeResult _) -> do

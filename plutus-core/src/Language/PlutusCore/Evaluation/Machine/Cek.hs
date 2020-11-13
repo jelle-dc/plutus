@@ -41,6 +41,7 @@ module Language.PlutusCore.Evaluation.Machine.Cek
     , evaluateCek
     , unsafeEvaluateCek
     , readKnownCek
+    , annotateMemory
     )
 where
 
@@ -61,12 +62,13 @@ import           Control.Lens                                       (AReview)
 import           Control.Lens.Operators
 import           Control.Lens.Setter
 import           Control.Monad.Except
-import           Control.Monad.Morph
+import Control.Monad.Morph ( MFunctor(hoist))
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
 import           Data.Array
 import           Data.HashMap.Monoidal
 import           Data.Text.Prettyprint.Doc
+import Data.Functor.Foldable (Recursive(cata))
 
 {- Note [Scoping]
    The CEK machine does not rely on the global uniqueness condition, so the renamer pass is not a
@@ -106,6 +108,13 @@ data CekValue uni fun =
       [CekValue uni fun]    -- Arguments we've computed so far.
       (CekValEnv uni fun)   -- Initial environment, used for evaluating every argument
     deriving (Show, Eq) -- Eq is just for tests.
+
+instance ToAnnotation (CekValue uni fun) ExMemory where
+    toAnnotation (VCon mem _) = mem
+    toAnnotation (VTyAbs mem _ _ _ _) = mem
+    toAnnotation (VLamAbs mem _ _ _ _) = mem
+    toAnnotation (VIWrap mem _ _ _) = mem
+    toAnnotation (VBuiltin mem _ _ _ _ _ _) = mem
 
 type CekValEnv uni fun = UniqueMap TermUnique (CekValue uni fun)
 
@@ -253,22 +262,14 @@ instance AsConstant (CekValue uni fun) where
     asConstant (VCon _ val) = Just val
     asConstant _            = Nothing
 
-instance ToExMemory (CekValue uni fun) where
-    toExMemory = \case
-        VCon     ex _           -> ex
-        VTyAbs   ex _ _ _ _     -> ex
-        VLamAbs  ex _ _ _ _     -> ex
-        VIWrap   ex _ _ _       -> ex
-        VBuiltin ex _ _ _ _ _ _ -> ex
-
 instance ExBudgetBuiltin fun (ExBudgetCategory fun) where
     exBudgetBuiltin = BBuiltin
 
-instance (Eq fun, Hashable fun, ToExMemory term) =>
+instance (Eq fun, Hashable fun) =>
             SpendBudget (CekCarryingM term uni fun) fun (ExBudgetCategory fun) term where
     spendBudget key budget = do
         modifying exBudgetStateTally
-                (<> (ExTally (singleton key budget)))
+                (<> ExTally (singleton key [budget]))
         newBudget <- exBudgetStateBudget <%= (<> budget)
         mode <- asks cekEnvBudgetMode
         case mode of
@@ -304,7 +305,7 @@ extendEnv = insertByName
 
 -- | Look up a variable name in the environment.
 lookupVarName :: Name -> CekValEnv uni fun -> CekM uni fun (CekValue uni fun)
-lookupVarName varName varEnv = do
+lookupVarName varName varEnv =
     case lookupName varName varEnv of
         Nothing  -> throwingWithCause _MachineError OpenTermEvaluatedMachineError $ Just var where
             var = Var () varName
@@ -357,7 +358,7 @@ computeCek ctx env (Builtin ex bn) = do
   returnCek ctx (VBuiltin ex bn arity arity [] [] env)
 -- s ; ρ ▻ error A  ↦  <> A
 computeCek _ _ Error{} =
-    throwingWithCause _EvaluationError (UserEvaluationError CekEvaluationFailure) $ Nothing
+    throwingWithCause _EvaluationError (UserEvaluationError CekEvaluationFailure) Nothing
 -- s ; ρ ▻ x  ↦  s ◅ ρ[ x ]
 computeCek ctx env (Var _ varName) = do
     spendBudget BVar (ExBudget 1 1) -- TODO
@@ -395,11 +396,11 @@ returnCek [] val = pure $ void $ dischargeCekValue val
 -- s , {_ A} ◅ abs α M  ↦  s ; ρ ▻ M [ α / A ]*
 returnCek (FrameTyInstArg ty : ctx) fun = instantiateEvaluate ctx ty fun
 -- s , [_ (M,ρ)] ◅ V  ↦  s , [V _] ; ρ ▻ M
-returnCek (FrameApplyArg argVarEnv arg : ctx) fun = do
+returnCek (FrameApplyArg argVarEnv arg : ctx) fun =
     computeCek (FrameApplyFun fun : ctx) argVarEnv arg
 -- s , [(lam x (M,ρ)) _] ◅ V  ↦  s ; ρ [ x  ↦  V ] ▻ M
 -- FIXME: add rule for VBuiltin once it's in the specification.
-returnCek (FrameApplyFun fun : ctx) arg = do
+returnCek (FrameApplyFun fun : ctx) arg =
     applyEvaluate ctx fun arg
 -- s , wrap A B _ ◅ V  ↦  s ◅ wrap A B V
 returnCek (FrameIWrap ex pat arg : ctx) val =
@@ -468,7 +469,7 @@ applyEvaluate
     -> CekM uni fun (Plain Term uni fun)
 applyEvaluate ctx (VLamAbs _ name _ty body env) arg =
     computeCek ctx (extendEnv name arg env) body
-applyEvaluate ctx val@(VBuiltin ex bn arity0 arity tyargs args argEnv) arg = do
+applyEvaluate ctx val@(VBuiltin ex bn arity0 arity tyargs args argEnv) arg =
     case arity of
       []        -> throwingDischarged _MachineError EmptyBuiltinArityMachineError val
                 -- Should be impossible: see instantiateEvaluate.
@@ -499,7 +500,7 @@ applyBuiltin ctx bn args = do
   case result of
     EvaluationSuccess t -> returnCek ctx t
     EvaluationFailure ->
-        throwingWithCause _EvaluationError (UserEvaluationError CekEvaluationFailure) $ Nothing
+        throwingWithCause _EvaluationError (UserEvaluationError CekEvaluationFailure) Nothing
         {- NB: we're not reporting any context here.  When UserEvaluationError is
            invloved, Exception.extractEvaluationResult just throws the cause
            away (see Note [Ignoring context in UserEvaluationError]), so it
@@ -510,7 +511,7 @@ applyBuiltin ctx bn args = do
 -- | Evaluate a term using the CEK machine and keep track of costing.
 runCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> ExBudgetMode
@@ -523,12 +524,12 @@ runCek runtime mode term =
             spendBudget BAST (ExBudget 0 (termAnn memTerm))
             computeCek [] mempty memTerm
     where
-        memTerm = withMemory term
+        memTerm = annotateMemory term
 
 -- | Evaluate a term using the CEK machine in the 'Counting' mode.
 runCekCounting
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Plain Term uni fun
@@ -538,7 +539,7 @@ runCekCounting runtime = runCek runtime Counting
 -- | Evaluate a term using the CEK machine.
 evaluateCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
-       , Hashable fun, Ix fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Plain Term uni fun
@@ -549,7 +550,7 @@ evaluateCek runtime = fst . runCekCounting runtime
 unsafeEvaluateCek
     :: ( GShow uni, GEq uni, Typeable uni
        , Closed uni, uni `EverywhereAll` '[ExMemoryUsage, PrettyConst]
-       , Hashable fun, Ix fun, Pretty fun, Typeable fun, ExMemoryUsage fun
+       , Hashable fun, Ix fun, Pretty fun, Typeable fun
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Plain Term uni fun
@@ -561,8 +562,38 @@ readKnownCek
     :: ( GShow uni, GEq uni, Closed uni, uni `Everywhere` ExMemoryUsage
        , KnownType (Plain Term uni fun) a
        , Hashable fun, Ix fun, ExMemoryUsage fun
+       , ExMemoryUsage a
        )
     => BuiltinsRuntime fun (CekValue uni fun)
     -> Plain Term uni fun
     -> Either (CekEvaluationException uni fun) a
 readKnownCek runtime = evaluateCek runtime >=> readKnown
+
+-- Don't trust this one, use the function from the untyped Cek.
+annotateMemory :: (Everywhere uni ExMemoryUsage, Closed uni) =>
+    Term TyName Name uni fun () -> Term TyName Name uni fun ExMemory
+annotateMemory = cata $ \case
+    VarF () name -> Var (constructorMemoryUsage + memoryUsage name) name
+    TyAbsF () tyname kind term -> TyAbs (constructorMemoryUsage + memoryUsage tyname + toAnnotation kind' + toAnnotation term) tyname kind' term
+        where
+            kind' = withMemory kind
+    LamAbsF () name ty term -> LamAbs (constructorMemoryUsage + toAnnotation ty' + memoryUsage name + toAnnotation term) name ty' term
+        where
+            ty' = withMemory ty
+    ApplyF () term1 term2 -> Apply (constructorMemoryUsage + termAnn term1 + termAnn term2) term1 term2
+    ConstantF () som -> Constant (constructorMemoryUsage + memoryUsage som) som
+    BuiltinF () fun -> Builtin constructorMemoryUsage fun
+    TyInstF () term ty -> TyInst (constructorMemoryUsage + toAnnotation ty' + toAnnotation term) term ty'
+        where
+            ty' = withMemory ty
+    UnwrapF () term -> Unwrap (constructorMemoryUsage + termAnn term) term
+    IWrapF () ty1 ty2 term ->
+        IWrap (constructorMemoryUsage + toAnnotation ty1' + toAnnotation ty2' + termAnn term) ty1' ty2' term
+        where
+            ty1' = withMemory ty1
+            ty2' = withMemory ty2
+    ErrorF () ty -> Error (constructorMemoryUsage + toAnnotation ty') ty'
+        where
+            ty' = withMemory ty
+    where
+        constructorMemoryUsage = 1

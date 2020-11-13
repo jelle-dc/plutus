@@ -77,7 +77,6 @@ module Language.PlutusCore.Evaluation.Machine.ExBudgeting
     , ExBudgetState(..)
     , ExTally(..)
     , ExRestrictingBudget(..)
-    , ToExMemory(..)
     , ExBudgetBuiltin(..)
     , SpendBudget(..)
     , CostModel
@@ -124,6 +123,7 @@ import           Data.Text.Prettyprint.Doc
 import           Deriving.Aeson
 import           Language.Haskell.TH.Syntax                      hiding (Name)
 import           Language.PlutusCore.Evaluation.Machine.ExMemory
+import Debug.Trace
 
 newtype ExRestrictingBudget = ExRestrictingBudget ExBudget deriving (Show, Eq)
     deriving (Semigroup, Monoid) via (GenericSemigroupMonoid ExBudget)
@@ -131,17 +131,6 @@ newtype ExRestrictingBudget = ExRestrictingBudget ExBudget deriving (Show, Eq)
 data ExBudgetMode =
       Counting -- ^ For precalculation
     | Restricting ExRestrictingBudget -- ^ For execution, to avoid overruns
-
-class ToExMemory term where
-    -- | Get the 'ExMemory' of a @term@. If the @term@ is not annotated with 'ExMemory', then
-    -- return something arbitrary just to fit such a term into the builtin application machinery.
-    toExMemory :: term -> ExMemory
-
-instance ToExMemory (Term TyName Name uni fun ()) where
-    toExMemory _ = 0
-
-instance ToExMemory (Term TyName Name uni fun ExMemory) where
-    toExMemory = termAnn
 
 -- | A class for injecting a 'Builtin' into an @exBudgetCat@.
 -- We need it, because the constant application machinery calls 'spendBudget' before reducing a
@@ -155,7 +144,7 @@ instance ExBudgetBuiltin fun () where
     exBudgetBuiltin _ = ()
 
 -- This works nicely because @m@ contains @term@.
-class (ExBudgetBuiltin fun exBudgetCat, ToExMemory term) =>
+class (ExBudgetBuiltin fun exBudgetCat) =>
             SpendBudget m fun exBudgetCat term | m -> fun exBudgetCat term where
     -- | Spend the budget, which may mean different things depending on the monad:
     --
@@ -190,7 +179,7 @@ instance ( PrettyDefaultBy config Integer, PrettyBy config exBudgetCat
         , "}"
         ]
 
-newtype ExTally exBudgetCat = ExTally (MonoidalHashMap exBudgetCat ExBudget)
+newtype ExTally exBudgetCat = ExTally (MonoidalHashMap exBudgetCat [ExBudget])
     deriving stock (Eq, Generic, Show)
     deriving (Semigroup, Monoid) via (GenericSemigroupMonoid (ExTally exBudgetCat))
     deriving anyclass NFData
@@ -199,7 +188,7 @@ instance ( PrettyDefaultBy config Integer, PrettyBy config exBudgetCat
          ) => PrettyBy config (ExTally exBudgetCat) where
     prettyBy config (ExTally m) =
         parens $ fold (["{ "] <> (intersperse (line <> "| ") $ fmap group $
-          ifoldMap (\k v -> [(prettyBy config k <+> "causes" <+> prettyBy config v)]) m) <> ["}"])
+          ifoldMap (\k v -> [(prettyBy config k <+> "causes" <+> (fold (["[  "] <> (intersperse (line <> "|   ") (prettyBy config <$> v)) <> ["]"])))]) m) <> ["}"])
 
 type CostModel = CostModelBase CostingFun
 

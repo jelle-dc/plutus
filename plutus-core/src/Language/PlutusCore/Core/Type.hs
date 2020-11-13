@@ -1,3 +1,5 @@
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DerivingVia           #-}
@@ -15,6 +17,7 @@ module Language.PlutusCore.Core.Type
     , Program(..)
     , UniOf
     , Normalized(..)
+    , ToAnnotation(..)
     , HasUniques
     , defaultVersion
     -- * Helper functions
@@ -34,6 +37,7 @@ import           Control.Lens
 import           Data.Hashable
 import           GHC.Exts                     (Constraint)
 import           Instances.TH.Lift            ()
+import Data.Data (Data)
 
 {- Note [Annotations and equality]
 Equality of two things does not depend on their annotations.
@@ -105,6 +109,19 @@ defaultVersion ann = Version ann 1 0 0
 
 toTerm :: Program tyname name uni fun ann -> Term tyname name uni fun ann
 toTerm (Program _ _ term) = term
+
+class ToAnnotation term a | term -> a where
+    toAnnotation :: term -> a
+
+instance ToAnnotation (Term tyname name uni fun ann) ann where
+    toAnnotation = termAnn
+
+instance ToAnnotation (Type tyname uni ann) ann where
+    toAnnotation = typeAnn
+
+instance ToAnnotation (Kind ann) ann where
+    toAnnotation (Type ann) = ann
+    toAnnotation (KindArrow ann _ _) = ann
 
 typeAnn :: Type tyname uni ann -> ann
 typeAnn (TyVar ann _       ) = ann
