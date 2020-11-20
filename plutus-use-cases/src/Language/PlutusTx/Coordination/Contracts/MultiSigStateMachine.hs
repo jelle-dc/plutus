@@ -96,7 +96,8 @@ data MSState =
 
     | CollectingSignatures Payment [PubKeyHash]
     -- ^ A payment has been proposed and is awaiting signatures.
-    deriving (Show)
+    deriving stock (Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
 
 instance Eq MSState where
     {-# INLINABLE (==) #-}
@@ -119,12 +120,14 @@ data Input =
 
     | Pay
     -- ^ Make the payment.
-    deriving Show
+    deriving stock (Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
 
 data MultiSigError =
     MSContractError ContractError
     | MSStateMachineError (SM.SMContractError MSState Input)
-    deriving Show
+    deriving stock (Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
 makeClassyPrisms ''MultiSigError
 
 instance AsContractError MultiSigError where
