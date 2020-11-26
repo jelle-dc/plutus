@@ -356,9 +356,9 @@ handleAction CompileProgram = do
       newCompilationResult <- postContract contents
       assign _compilationResult newCompilationResult
       -- If we got a successful result, switch tab.
-      case newCompilationResult of
-        Success (Left _) -> pure unit
-        _ -> replaceViewOnSuccess newCompilationResult Editor Simulations
+      -- case newCompilationResult of
+      --   Success (Left _) -> pure unit
+      --    _ -> replaceViewOnSuccess newCompilationResult Editor Simulations
       -- Update the error display.
       editorSetAnnotations
         $ case newCompilationResult of
