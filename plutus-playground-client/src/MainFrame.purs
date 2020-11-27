@@ -287,9 +287,9 @@ handleAction EvaluateActions =
         result <- lift $ postEvaluation evaluation
         assign _evaluationResult result
         -- If we got a successful result, switch tab.
-        case result of
-          Success (Left _) -> pure unit
-          _ -> replaceViewOnSuccess result Simulations Transactions
+        -- case result of
+        --   Success (Left _) -> pure unit
+        --   _ -> replaceViewOnSuccess result Simulations Transactions
         pure unit
 
 handleAction (LoadScript key) = do
