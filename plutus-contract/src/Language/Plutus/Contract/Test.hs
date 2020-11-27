@@ -96,18 +96,19 @@ import qualified Language.Plutus.Contract.Resumable              as State
 import           Language.Plutus.Contract.Types                  (Contract (..))
 import qualified Language.PlutusTx.Prelude                       as P
 import           Ledger.Constraints.OffChain                     (UnbalancedTx)
-import           Ledger.Tx                                       (Tx)
+import           Ledger.Tx                                       (Tx, txId)
 
 import           Ledger.Address                                  (Address)
 import           Ledger.Generators                               (GeneratorModel, Mockchain (..))
 import qualified Ledger.Generators                               as Gen
-import           Ledger.Index                                    (ValidationError)
+import           Ledger.Index                                    (ScriptValidationEvent, ValidationError)
 import           Ledger.Slot                                     (Slot)
 import           Ledger.Value                                    (Value)
 import           Wallet.Emulator                                 (EmulatorEvent, EmulatorTimeEvent)
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
+import           Language.Plutus.Contract.Util                   (uncurry3)
 import           Plutus.Trace                                    (defaultEmulatorConfig)
 import           Plutus.Trace.Emulator                           (EmulatorConfig (..), EmulatorTrace, runEmulatorStream)
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractInstanceLog,
@@ -509,13 +510,13 @@ assertChainEvents predicate =
 
 -- | Assert that at least one transaction failed to validate, and that all
 --   transactions that failed meet the predicate.
-assertFailedTransaction :: (Tx -> ValidationError -> Bool) -> TracePredicate
+assertFailedTransaction :: (Tx -> ValidationError -> [ScriptValidationEvent] -> Bool) -> TracePredicate
 assertFailedTransaction predicate =
     flip postMapM (L.generalize Folds.failedTransactions) $ \case
         [] -> do
             tell @(Doc Void) $ "No transactions failed to validate."
             pure False
-        xs -> pure (all (uncurry predicate) xs)
+        xs -> pure (all (uncurry3 predicate) xs)
 
 -- | Assert that no transaction failed to validate.
 assertNoFailedTransactions :: TracePredicate
@@ -523,7 +524,8 @@ assertNoFailedTransactions =
     flip postMapM (L.generalize Folds.failedTransactions) $ \case
         [] -> pure True
         xs -> do
-            tell @(Doc Void) $ vsep ("Transactions failed to validate:" : fmap pretty xs)
+            let prettyTxFail (txn, err, _) = pretty (txId txn) <> colon <+> pretty err
+            tell @(Doc Void) $ vsep ("Transactions failed to validate:" : fmap prettyTxFail xs)
             pure False
 
 assertInstanceLog ::

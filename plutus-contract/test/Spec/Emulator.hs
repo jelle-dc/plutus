@@ -143,10 +143,10 @@ txnUpdateUtxo = property $ do
             Trace.liftWallet wallet1 (submitTxn txn)
             Trace.liftWallet wallet1 (submitTxn txn)
         pred = \case
-            [ Chain.TxnValidate _
+            [ Chain.TxnValidate{}
                 , Chain.SlotAdd _
-                , Chain.TxnValidate i1
-                , Chain.TxnValidationFail txi (Index.TxOutRefNotFound _)
+                , Chain.TxnValidate i1 _
+                , Chain.TxnValidationFail txi (Index.TxOutRefNotFound _) _
                 , Chain.SlotAdd _
                 ] -> i1 == txn && txi == txn
             _ -> False
@@ -166,9 +166,9 @@ invalidTrace = property $ do
         options = defaultCheckOptions & emulatorConfig . Trace.initialChainState .~ Right m
         trace = Trace.liftWallet wallet1 (submitTxn invalidTxn)
         pred = \case
-            [ Chain.TxnValidate _
+            [ Chain.TxnValidate{}
                 , Chain.SlotAdd _
-                , Chain.TxnValidationFail txn (Index.ValueNotPreserved _ _)
+                , Chain.TxnValidationFail txn (Index.ValueNotPreserved _ _) _
                 , Chain.SlotAdd _
                 ] -> txn == invalidTxn
             _ -> False
@@ -201,11 +201,11 @@ invalidScript = property $ do
             _ <- Trace.nextSlot
             Trace.liftWallet wallet1 (submitTxn invalidTxn)
         pred = \case
-            [ Chain.TxnValidate _
+            [ Chain.TxnValidate{}
                 , Chain.SlotAdd _
                 , Chain.TxnValidate{}
                 , Chain.SlotAdd _
-                , Chain.TxnValidationFail txn (ScriptFailure (EvaluationError ["I always fail everything"]))
+                , Chain.TxnValidationFail txn (ScriptFailure (EvaluationError ["I always fail everything"])) _
                 , Chain.SlotAdd _
                 ] -> txn == invalidTxn
             _ -> False
