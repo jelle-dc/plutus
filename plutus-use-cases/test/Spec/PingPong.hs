@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE TypeApplications #-}
-module Spec.PingPong(tests) where
+module Spec.PingPong(tests, pingPongTrace) where
 
 import           Control.Monad                                     (void)
 import           Data.Maybe                                        (isJust, isNothing)
@@ -41,14 +41,8 @@ tests :: TestTree
 tests = testGroup "pingpong"
     [ checkPredicate "activate endpoints"
         (endpointAvailable @"pong" theContract (Trace.walletInstanceTag w1))
-        $ do
-            hdl <- Trace.activateContractWallet w1 theContract
-            Trace.callEndpoint @"initialise" hdl ()
-            Trace.waitNSlots 2
-            Trace.callEndpoint @"pong" hdl ()
-            Trace.waitNSlots 2
-            Trace.callEndpoint @"ping" hdl ()
-            void $ Trace.waitNSlots 2
+        pingPongTrace
+
     , checkPredicate "Stop the contract"
         (assertDone twoParties (Trace.walletInstanceTag w1) isJust "W1"
         .&&. assertDone twoParties (Trace.walletInstanceTag w2) isNothing "W2"
@@ -62,3 +56,13 @@ tests = testGroup "pingpong"
             void $ Trace.waitNSlots 2
 
     ]
+
+pingPongTrace :: Trace.EmulatorTrace ()
+pingPongTrace = do
+    hdl <- Trace.activateContractWallet w1 theContract
+    Trace.callEndpoint @"initialise" hdl ()
+    Trace.waitNSlots 2
+    Trace.callEndpoint @"pong" hdl ()
+    Trace.waitNSlots 2
+    Trace.callEndpoint @"ping" hdl ()
+    void $ Trace.waitNSlots 2

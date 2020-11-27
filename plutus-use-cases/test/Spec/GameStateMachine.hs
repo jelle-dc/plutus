@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeApplications  #-}
-module Spec.GameStateMachine(tests) where
+module Spec.GameStateMachine(tests, successTrace, successTrace2, failTrace) where
 
 import           Test.Tasty
 import qualified Test.Tasty.HUnit                                          as HUnit
@@ -38,27 +38,13 @@ tests =
         .&&. valueAtAddress (Scripts.scriptAddress G.scriptInstance) (Ada.lovelaceValueOf 1 ==)
         .&&. walletFundsChange w1 (Ada.lovelaceValueOf (-8))
         .&&. walletFundsChange w3 (Ada.lovelaceValueOf 4 <> gameTokenVal))
-        $ do
-            successTrace
-            Trace.payToWallet w2 w3 gameTokenVal
-            Trace.waitNSlots 1
-            hdl3 <- Trace.activateContractWallet w3 G.contract
-            Trace.callEndpoint @"guess" hdl3 GuessArgs{guessArgsOldSecret="new secret", guessArgsNewSecret="hello", guessArgsValueTakenOut=Ada.lovelaceValueOf 4}
-            void $ Trace.waitNSlots 1
+        successTrace2
 
     , checkPredicate "run a failed trace"
         (walletFundsChange w2 gameTokenVal
         .&&. valueAtAddress (Scripts.scriptAddress G.scriptInstance) (Ada.lovelaceValueOf 8 ==)
         .&&. walletFundsChange w1 (Ada.lovelaceValueOf (-8)))
-        $ do
-            hdl <- Trace.activateContractWallet w1 G.contract
-            Trace.callEndpoint @"lock" hdl LockArgs{lockArgsSecret="hello", lockArgsValue= Ada.lovelaceValueOf 8}
-            _ <- Trace.waitNSlots 2
-            Trace.payToWallet w1 w2 gameTokenVal
-            _ <- Trace.waitNSlots 1
-            hdl2 <- Trace.activateContractWallet w2 G.contract
-            _ <- Trace.callEndpoint @"guess" hdl2 GuessArgs{guessArgsOldSecret="hola", guessArgsNewSecret="new secret", guessArgsValueTakenOut=Ada.lovelaceValueOf 3}
-            void $ Trace.waitNSlots 1
+        failTrace
 
     , Lib.goldenPir "test/Spec/gameStateMachine.pir" $$(PlutusTx.compile [|| mkValidator ||])
 
@@ -88,6 +74,26 @@ successTrace = do
     _ <- Trace.waitNSlots 1
     hdl2 <- Trace.activateContractWallet w2 G.contract
     Trace.callEndpoint @"guess" hdl2 GuessArgs{guessArgsOldSecret="hello", guessArgsNewSecret="new secret", guessArgsValueTakenOut=Ada.lovelaceValueOf 3}
+    void $ Trace.waitNSlots 1
+
+successTrace2 :: EmulatorTrace ()
+successTrace2 = do
+    successTrace
+    Trace.payToWallet w2 w3 gameTokenVal
+    Trace.waitNSlots 1
+    hdl3 <- Trace.activateContractWallet w3 G.contract
+    Trace.callEndpoint @"guess" hdl3 GuessArgs{guessArgsOldSecret="new secret", guessArgsNewSecret="hello", guessArgsValueTakenOut=Ada.lovelaceValueOf 4}
+    void $ Trace.waitNSlots 1
+
+failTrace :: EmulatorTrace ()
+failTrace = do
+    hdl <- Trace.activateContractWallet w1 G.contract
+    Trace.callEndpoint @"lock" hdl LockArgs{lockArgsSecret="hello", lockArgsValue= Ada.lovelaceValueOf 8}
+    _ <- Trace.waitNSlots 2
+    Trace.payToWallet w1 w2 gameTokenVal
+    _ <- Trace.waitNSlots 1
+    hdl2 <- Trace.activateContractWallet w2 G.contract
+    _ <- Trace.callEndpoint @"guess" hdl2 GuessArgs{guessArgsOldSecret="hola", guessArgsNewSecret="new secret", guessArgsValueTakenOut=Ada.lovelaceValueOf 3}
     void $ Trace.waitNSlots 1
 
 gameTokenVal :: Value

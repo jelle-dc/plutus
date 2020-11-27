@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE TypeApplications #-}
-module Spec.Escrow where
+module Spec.Escrow(tests, redeemTrace, redeem2Trace, refundTrace) where
 
 import           Control.Monad                                   (void)
 
@@ -37,16 +37,7 @@ tests = testGroup "escrow"
           .&&. walletFundsChange w2  (Ada.lovelaceValueOf 10)
           .&&. walletFundsChange w3 mempty
         )
-        $ do
-          hdl1 <- Trace.activateContractWallet w1 con
-          hdl2 <- Trace.activateContractWallet w2 con
-          hdl3 <- Trace.activateContractWallet w3 con
-
-          Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
-          Trace.callEndpoint @"pay-escrow" hdl2 (Ada.lovelaceValueOf 10)
-          Trace.waitNSlots 1
-          Trace.callEndpoint @"redeem-escrow" hdl3 ()
-          void $ Trace.waitNSlots 1
+        redeemTrace
 
     , let con = (void $ both (payEp @EscrowSchema @EscrowError escrowParams) (redeemEp escrowParams)) in
       checkPredicate "can redeem even if more money than required has been paid in"
@@ -72,28 +63,13 @@ tests = testGroup "escrow"
           -- Wallet 3 pays 10 and doesn't receive anything.
             .&&. walletFundsChange w3 (Ada.lovelaceValueOf (-10))
           )
-
-          $ do
-            hdl1 <- Trace.activateContractWallet w1 con
-            hdl2 <- Trace.activateContractWallet w2 con
-            hdl3 <- Trace.activateContractWallet w3 con
-            Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
-            Trace.callEndpoint @"pay-escrow" hdl2 (Ada.lovelaceValueOf 10)
-            Trace.callEndpoint @"pay-escrow" hdl3 (Ada.lovelaceValueOf 10)
-            Trace.waitNSlots 1
-            Trace.callEndpoint @"redeem-escrow" hdl1 ()
-            void $ Trace.waitNSlots 1
+          redeem2Trace
 
     , let con = void $ payEp  @EscrowSchema @EscrowError escrowParams >> refundEp escrowParams in
       checkPredicate "can refund"
         ( walletFundsChange w1 mempty
           .&&. assertDone con (Trace.walletInstanceTag w1) (const True) "refund should succeed")
-        $ do
-            hdl1 <- Trace.activateContractWallet w1 con
-            Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
-            Trace.waitNSlots 100
-            Trace.callEndpoint @"refund-escrow" hdl1 ()
-            void $ Trace.waitNSlots 1
+        refundTrace
 
     , HUnit.testCase "script size is reasonable" (Lib.reasonable (Scripts.validatorScript $ scriptInstance escrowParams) 32000)
     ]
@@ -112,3 +88,38 @@ escrowParams =
         , payToPubKeyTarget (pubKeyHash $ walletPubKey w2) (Ada.lovelaceValueOf 20)
         ]
     }
+
+redeemTrace :: Trace.EmulatorTrace ()
+redeemTrace = do
+    let con = void $ selectEither (payEp  @EscrowSchema @EscrowError escrowParams) (redeemEp escrowParams)
+    hdl1 <- Trace.activateContractWallet w1 con
+    hdl2 <- Trace.activateContractWallet w2 con
+    hdl3 <- Trace.activateContractWallet w3 con
+
+    Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
+    Trace.callEndpoint @"pay-escrow" hdl2 (Ada.lovelaceValueOf 10)
+    Trace.waitNSlots 1
+    Trace.callEndpoint @"redeem-escrow" hdl3 ()
+    void $ Trace.waitNSlots 1
+
+redeem2Trace :: Trace.EmulatorTrace ()
+redeem2Trace = do
+    let con = (void $ both (payEp @EscrowSchema @EscrowError escrowParams) (redeemEp escrowParams))
+    hdl1 <- Trace.activateContractWallet w1 con
+    hdl2 <- Trace.activateContractWallet w2 con
+    hdl3 <- Trace.activateContractWallet w3 con
+    Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
+    Trace.callEndpoint @"pay-escrow" hdl2 (Ada.lovelaceValueOf 10)
+    Trace.callEndpoint @"pay-escrow" hdl3 (Ada.lovelaceValueOf 10)
+    Trace.waitNSlots 1
+    Trace.callEndpoint @"redeem-escrow" hdl1 ()
+    void $ Trace.waitNSlots 1
+
+refundTrace :: Trace.EmulatorTrace ()
+refundTrace = do
+    let con = void $ payEp  @EscrowSchema @EscrowError escrowParams >> refundEp escrowParams
+    hdl1 <- Trace.activateContractWallet w1 con
+    Trace.callEndpoint @"pay-escrow" hdl1 (Ada.lovelaceValueOf 20)
+    Trace.waitNSlots 100
+    Trace.callEndpoint @"refund-escrow" hdl1 ()
+    void $ Trace.waitNSlots 1
