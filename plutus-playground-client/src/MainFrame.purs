@@ -68,7 +68,7 @@ import Servant.PureScript.Ajax (errorToString)
 import Servant.PureScript.Settings (SPSettings_, defaultSettings)
 import StaticData (mkContractDemos)
 import StaticData as StaticData
-import Types (ChildSlots, DragAndDropEventType(..), HAction(..), Query, State(..), View(..), WalletEvent(..), WebData, _actionDrag, _authStatus, _blockchainVisualisationState, _compilationResult, _contractDemos, _createGistResult, _currentView, _evaluationResult, _functionSchema, _gistUrl, _knownCurrencies, _result, _resultRollup, _simulationActions, _simulationWallets, _simulations, _simulatorWalletBalance, _simulatorWalletWallet, _successfulCompilationResult, _walletId, getKnownCurrencies, toEvaluation)
+import Types (ChildSlots, DragAndDropEventType(..), HAction(..), Query, State(..), View(..), WalletEvent(..), WebData, _actionDrag, _authStatus, _blockchainVisualisationState, _compilationResult, _contractDemos, _createGistResult, _currentView, _demoFilesMenuOpen, _evaluationResult, _functionSchema, _gistUrl, _knownCurrencies, _result, _resultRollup, _simulationActions, _simulationWallets, _simulations, _simulatorWalletBalance, _simulatorWalletWallet, _successfulCompilationResult, _walletId, getKnownCurrencies, toEvaluation)
 import Validation (_argumentValues, _argument)
 import ValueEditor (ValueEvent(..))
 import View as View
@@ -95,7 +95,8 @@ mkInitialState editorState = do
   contractDemos <- mapError (\e -> error $ "Could not load demo scripts. Parsing errors: " <> show e) mkContractDemos
   pure
     $ State
-        { currentView: Editor
+        { demoFilesMenuOpen: false
+        , currentView: Editor
         , editorState
         , contractDemos
         , compilationResult: NotAsked
@@ -173,6 +174,8 @@ toEvent (GistAction PublishGist) = Just $ (defaultEvent "Publish") { category = 
 toEvent (GistAction (SetGistUrl _)) = Nothing
 
 toEvent (GistAction LoadGist) = Just $ (defaultEvent "LoadGist") { category = Just "Gist" }
+
+toEvent (ToggleDemoFilesMenu) = Just $ (defaultEvent "ToggleDemoFilesMenu")
 
 toEvent (ChangeView view) = Just $ (defaultEvent "View") { label = Just $ show view }
 
@@ -268,6 +271,9 @@ handleAction CheckAuthStatus = do
   assign _authStatus authResult
 
 handleAction (GistAction subEvent) = handleGistAction subEvent
+
+handleAction ToggleDemoFilesMenu = do
+  modifying _demoFilesMenuOpen not
 
 handleAction (ChangeView view) = do
   assign _currentView view
