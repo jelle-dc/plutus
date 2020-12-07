@@ -15,6 +15,7 @@ import           Language.PlutusCore.Error
 import           Language.PlutusCore.Lexer.Type
 import           Language.PlutusCore.MkPlc      (TyVarDecl (..), VarDecl (..))
 import           Language.PlutusCore.Name
+import           Language.PlutusCore.Core.BiType
 import           PlutusPrelude
 
 import           Codec.CBOR.Decoding
@@ -226,6 +227,57 @@ instance ( Serialise ann
 instance ( Serialise ann
          , Serialise (tyname ann)
          , Serialise (name ann)
+         ) => Serialise (BiTerm tyname name ann) where
+    encode = cata a where
+        a (BiVarF ann n)           = encodeConstructorTag 0 <> encode ann <> encode n
+        a (BiLamAbsF ann n t)      = encodeConstructorTag 2 <> encode ann <> encode n <> t
+        a (BiApplyF ann t t')      = encodeConstructorTag 3 <> encode ann <> t <> t'
+        a (BiConstantF ann c)      = encodeConstructorTag 4 <> encode ann <> encode c
+        a (BiUnwrapF ann t)        = encodeConstructorTag 6 <> encode ann <> t
+        a (BiIWrapF ann pat arg t) = encodeConstructorTag 7 <> encode ann <> encode pat <> encode arg <> t
+        a (BiErrorF ann ty)        = encodeConstructorTag 8 <> encode ann <> encode ty
+        a (BiBuiltinF ann bi)      = encodeConstructorTag 9 <> encode ann <> encode bi
+        a (TyAnnF ann tm ty)       = encodeConstructorTag 1 <> encode ann <> tm <> encode ty
+    decode = go =<< decodeConstructorTag
+        where go :: Word -> Decoder s (BiTerm tyname name ann)
+              go 0 = BiVar <$> decode <*> decode
+              go 2 = BiLamAbs <$> decode <*> decode <*> decode
+              go 3 = BiApply <$> decode <*> decode <*> decode
+              go 4 = BiConstant <$> decode <*> decode
+              go 6 = BiUnwrap <$> decode <*> decode
+              go 7 = BiIWrap <$> decode <*> decode <*> decode <*> decode
+              go 8 = BiError <$> decode <*> decode
+              go 9 = BiBuiltin <$> decode <*> decode
+              go 1 = TyAnn <$> decode <*> decode <*> decode
+              go _ = fail "Failed to decode Term TyName Name ()"
+    
+instance ( Serialise ann
+         , Serialise (name ann)
+         ) => Serialise (ETerm name ann) where
+    encode = cata a where
+        a (EVarF ann n)           = encodeConstructorTag 0 <> encode ann <> encode n
+        a (ELamAbsF ann n t)      = encodeConstructorTag 2 <> encode ann <> encode n <> t
+        a (EApplyF ann t t')      = encodeConstructorTag 3 <> encode ann <> t <> t'
+        a (EConstantF ann c)      = encodeConstructorTag 4 <> encode ann <> encode c
+        a (EUnwrapF ann t)        = encodeConstructorTag 6 <> encode ann <> t
+        a (EIWrapF ann t) = encodeConstructorTag 7 <> encode ann <> t
+        a (EErrorF ann)        = encodeConstructorTag 8 <> encode ann
+        a (EBuiltinF ann bi)      = encodeConstructorTag 9 <> encode ann <> encode bi
+    decode = go =<< decodeConstructorTag
+        where go :: Word -> Decoder s (ETerm name ann)
+              go 0 = EVar <$> decode <*> decode
+              go 2 = ELamAbs <$> decode <*> decode <*> decode
+              go 3 = EApply <$> decode <*> decode <*> decode
+              go 4 = EConstant <$> decode <*> decode
+              go 6 = EUnwrap <$> decode <*> decode
+              go 7 = EIWrap <$> decode <*> decode
+              go 8 = EError <$> decode
+              go 9 = EBuiltin <$> decode <*> decode
+              go _ = fail "Failed to decode Term TyName Name ()"
+
+instance ( Serialise ann
+         , Serialise (tyname ann)
+         , Serialise (name ann)
          ) => Serialise (VarDecl tyname name ann) where
     encode (VarDecl t name tyname ) = encode t <> encode name <> encode tyname
     decode = VarDecl <$> decode <*> decode <*> decode
@@ -240,6 +292,19 @@ instance ( Serialise ann
          ) => Serialise (Program tyname name ann) where
     encode (Program ann v t) = encode ann <> encode v <> encode t
     decode = Program <$> decode <*> decode <*> decode
+
+instance (  Serialise ann
+         , Serialise (tyname ann)
+         , Serialise (name ann)
+         ) => Serialise (BiProgram tyname name ann) where
+    encode (BiProgram ann v t) = encode ann <> encode v <> encode t
+    decode = BiProgram <$> decode <*> decode <*> decode
+
+instance (  Serialise ann
+         , Serialise (name ann)
+         ) => Serialise (EProgram name ann) where
+    encode (EProgram ann v t) = encode ann <> encode v <> encode t
+    decode = EProgram <$> decode <*> decode <*> decode
 
 deriving newtype instance (Serialise a) => Serialise (Normalized a)
 

@@ -15,9 +15,11 @@ module Language.PlutusCore.Rename.Monad
     , scopedRenamingTypes
     , scopedRenamingTerms
     , runRenameT
+    , runRenameT'
     , lookupNameM
     , renameNameM
     , withFreshenedName
+    , withFreshenedName'
     , withRenamedName
     ) where
 
@@ -28,6 +30,9 @@ import           Language.PlutusCore.Quote
 
 import           Control.Lens
 import           Control.Monad.Reader
+import           Control.Monad.Trans.Writer.CPS
+import           Data.Set
+import           Debug.Trace
 
 -- | The monad the renamer runs in.
 newtype RenameT ren m a = RenameT
@@ -84,6 +89,9 @@ instance HasRenaming ScopedRenaming TermUnique where
 runRenameT :: Monoid ren => RenameT ren m a -> m a
 runRenameT (RenameT a) = runReaderT a mempty
 
+runRenameT' :: (Monoid ren, Ord unique) => WriterT (Set (unique, unique)) (RenameT ren m) a -> m (a, Set (unique, unique))
+runRenameT' = runRenameT . runWriterT
+    
 -- | Map the underlying representation of 'Renaming'.
 mapRenaming
     :: (UniqueMap unique unique -> UniqueMap unique unique)
@@ -121,6 +129,17 @@ withFreshenedName
 withFreshenedName nameOld k = do
     uniqNew <- coerce <$> freshUnique
     local (insertByNameM nameOld uniqNew) $ k (nameOld & unique .~ uniqNew)
+
+withFreshenedName'
+    :: (HasRenaming ren unique, HasUnique name unique, MonadQuote m, Ord unique)
+    => name -> (name -> RenameT ren m c) -> WriterT (Set (unique, unique)) (RenameT ren m) c
+withFreshenedName' nameOld k = do
+    uniqNew <- lift $ coerce <$> freshUnique
+    tell $ singleton (nameOld ^. unique, uniqNew)
+    when ((unUnique $ coerce $ uniqNew) == 7168) $ traceM "created' 7168"
+    traceM $ "OLD: " ++ (show $ unUnique $ coerce $ nameOld ^. unique)
+    traceM $ "NEW: " ++ (show $ unUnique $ coerce $ uniqNew)
+    lift $ local (insertByNameM nameOld uniqNew) $ k (nameOld & unique .~ uniqNew)
 
 -- | Run a 'RenameT' computation in the environment extended by the mapping from an old name
 -- to a new one.

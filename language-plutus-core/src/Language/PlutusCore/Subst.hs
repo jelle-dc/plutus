@@ -17,6 +17,7 @@ module Language.PlutusCore.Subst
     , tvTy
     , uniquesType
     , uniquesTerm
+    , uniquesBiTerm
     ) where
 
 import           PlutusPrelude
@@ -174,3 +175,7 @@ uniquesType = setOf typeUniquesDeep
 -- | Get all the uniques in a term (including the type-level ones).
 uniquesTerm :: HasUniques (Term tyname name ann) => Term tyname name ann -> Set Unique
 uniquesTerm = setOf termUniquesDeep
+
+-- | Get all the uniques in a term (including the type-level ones).
+uniquesBiTerm :: HasUniques (BiTerm tyname name ann) => BiTerm tyname name ann -> Set Unique
+uniquesBiTerm = setOf biTermUniquesDeep

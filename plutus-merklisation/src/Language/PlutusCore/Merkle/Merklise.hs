@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# OPTIONS_GHC -fno-warn-unused-matches #-}
 
-module Language.PlutusCore.Merkle.Merklise (analyseScripts)
+module Language.PlutusCore.Merkle.Merklise (analyseScripts, pruneProgram, pruneAllTypes, numberProgram)
 where
 
 import qualified Codec.Compression.GZip                          as G

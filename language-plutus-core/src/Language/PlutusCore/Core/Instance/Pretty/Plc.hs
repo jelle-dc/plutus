@@ -14,6 +14,7 @@ import           PlutusPrelude
 import           Language.PlutusCore.Core.Instance.Pretty.Classic  ()
 import           Language.PlutusCore.Core.Instance.Pretty.Readable ()
 import           Language.PlutusCore.Core.Type
+import           Language.PlutusCore.Core.BiType
 import           Language.PlutusCore.Pretty.Plc
 
 instance PrettyBy PrettyConfigPlc (Kind ann)
@@ -24,6 +25,11 @@ instance DefaultPrettyPlcStrategy (Term tyname name ann) =>
     PrettyBy PrettyConfigPlc (Term tyname name ann)
 instance DefaultPrettyPlcStrategy (Program tyname name ann) =>
     PrettyBy PrettyConfigPlc (Program tyname name ann)
+
+instance DefaultPrettyPlcStrategy (BiTerm tyname name ann) =>
+    PrettyBy PrettyConfigPlc (BiTerm tyname name ann)
+instance DefaultPrettyPlcStrategy (BiProgram tyname name ann) =>
+    PrettyBy PrettyConfigPlc (BiProgram tyname name ann)
 
 -- TODO: use @DerivingVia@.
 instance PrettyBy PrettyConfigPlc BuiltinName where

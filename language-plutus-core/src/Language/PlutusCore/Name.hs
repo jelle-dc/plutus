@@ -75,7 +75,7 @@ newtype Unique = Unique { unUnique :: Int }
 -- | The unique of a type-level name.
 newtype TypeUnique = TypeUnique
     { unTypeUnique :: Unique
-    } deriving (Eq)
+    } deriving (Eq, Ord)
 
 -- | The unique of a term-level name.
 newtype TermUnique = TermUnique

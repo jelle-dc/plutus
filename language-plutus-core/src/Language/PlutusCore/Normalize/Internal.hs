@@ -13,6 +13,7 @@ module Language.PlutusCore.Normalize.Internal
     , runNormalizeTypeGasM
     , withExtendedTypeVarEnv
     , normalizeTypeM
+    , normalizeTypeM'
     , substNormalizeTypeM
     , normalizeTypesInM
     ) where
@@ -27,6 +28,11 @@ import           Control.Lens
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Trans.Maybe
+import           Control.Monad.Trans.Writer.CPS
+
+import           Data.Set as S
+import Data.Text (unpack)
+import           Debug.Trace
 
 {- Note [Global uniqueness]
 WARNING: everything in this module works under the assumption that the global uniqueness condition
@@ -158,15 +164,16 @@ are added to environments and normalization instantiates all variables presented
 normalizeTypeM
     :: (HasUnique (tyname ann) TypeUnique, MonadQuote m)
     => Type tyname ann -> NormalizeTypeT m tyname ann (Normalized (Type tyname ann))
-normalizeTypeM (TyForall ann name kind body) =
+normalizeTypeM ty@(TyForall ann name kind body) = --traceM ("norm forall: " ++ dbShowTy ty) >>
     TyForall ann name kind <<$>> normalizeTypeM body
-normalizeTypeM (TyIFix ann pat arg)          =
+normalizeTypeM ty@(TyIFix ann pat arg)          = --traceM ("norm IFix: " ++ dbShowTy ty) >>
     TyIFix ann <<$>> normalizeTypeM pat <<*>> normalizeTypeM arg
-normalizeTypeM (TyFun ann dom cod)           =
+normalizeTypeM ty@(TyFun ann dom cod)           = --traceM ("norm fun: " ++ dbShowTy ty) >>
     TyFun ann <<$>> normalizeTypeM dom <<*>> normalizeTypeM cod
-normalizeTypeM (TyLam ann name kind body)    =
+normalizeTypeM ty@(TyLam ann name kind body)    = --traceM ("norm lam: " ++ dbShowTy ty) >>
     TyLam ann name kind <<$>> normalizeTypeM body
-normalizeTypeM (TyApp ann fun arg)           = do
+normalizeTypeM ty@(TyApp ann fun arg)           = do
+    -- traceM $ "norm app: " ++ dbShowTy ty
     vFun <- normalizeTypeM fun
     vArg <- normalizeTypeM arg
     case unNormalized vFun of
@@ -176,11 +183,80 @@ normalizeTypeM (TyApp ann fun arg)           = do
         _                   -> pure $ TyApp ann <$> vFun <*> vArg
 normalizeTypeM var@(TyVar _ name)            = do
     mayTy <- lookupTyNameM name
+    -- traceM $ "norm var: " ++ dbShowTy var
     case mayTy of
         Nothing -> pure $ Normalized var
         Just ty -> liftDupable ty
 normalizeTypeM builtin@TyBuiltin{}           =
     pure $ Normalized builtin
+
+normalizeTypeM'
+    :: (HasUnique (tyname ann) TypeUnique, MonadQuote m)
+    => Type tyname ann -> NormalizeTypeT m tyname ann (Normalized (Type tyname ann, Set (TypeUnique, TypeUnique)))
+normalizeTypeM' ty@(TyForall ann name kind body) = do
+    -- traceM $ "norm' forall: " ++ dbShowTy ty
+    Normalized (body',s) <- normalizeTypeM' body
+    return $ Normalized (TyForall ann name kind body', s)
+normalizeTypeM' ty@(TyIFix ann pat arg)          = do
+    -- traceM $ "norm' IFix: " ++ dbShowTy ty
+    Normalized (pat',s1) <- normalizeTypeM' pat
+    Normalized (arg',s2) <- normalizeTypeM' arg
+    let normTy = TyIFix ann pat' arg'
+    -- traceM $ "exiting IFix: " ++ dbShowTy normTy
+    return $ Normalized (normTy, union s1 s2)
+normalizeTypeM' ty@(TyFun ann dom cod)           = do
+    -- traceM $ "norm' fun: " ++ dbShowTy ty
+    Normalized (dom',s1) <- normalizeTypeM' dom
+    Normalized (cod',s2) <- normalizeTypeM' cod
+    let normTy = TyFun ann dom' cod'
+    -- traceM $ "exiting fun: " ++ dbShowTy normTy
+    return $ Normalized (normTy, union s1 s2)
+normalizeTypeM' ty@(TyLam ann name kind body)    = do
+    -- traceM $ "norm' lam: " ++ dbShowTy ty
+    Normalized (body',s) <- normalizeTypeM' body
+    let normTy = TyLam ann name kind body'
+    -- traceM $ "exting lam: " ++ dbShowTy normTy
+    return $ Normalized (normTy, s)
+normalizeTypeM' ty@(TyApp ann fun arg)           = do
+    -- traceM $ "norm' app: " ++ dbShowTy ty
+    Normalized (vFun,s1) <- normalizeTypeM' fun
+    Normalized (vArg,s2) <- normalizeTypeM' arg
+    case vFun of
+        TyLam _ nArg _ body -> do
+            countTypeNormalizationStep
+            Normalized (normTy,s3) <- substNormalizeTypeM' (Normalized vArg) nArg body
+            -- traceM $ "exiting app (1): " ++ dbShowTy normTy
+            pure $ Normalized (normTy, S.unions [s1,s2,s3])
+        _                   -> do
+            let normTy = TyApp ann vFun vArg
+            -- traceM $ "exiting app (2): " ++ dbShowTy normTy
+            pure $ Normalized (normTy, union s1 s2)
+normalizeTypeM' var@(TyVar _ name)            = do
+    mayTy <- lookupTyNameM name
+    -- traceM $ "norm' var: " ++ dbShowTy var
+    case mayTy of
+        Nothing -> do 
+            -- traceM $ "exiting var: " ++ dbShowTy var
+            pure $ Normalized (var, S.empty)
+        Just ty -> do 
+            (ty',s) <- liftDupable' ty
+            -- traceM $ "exiting var: " ++ dbShowTy ty'
+            return $ Normalized (ty',s)
+normalizeTypeM' builtin@TyBuiltin{}           =
+    pure $ Normalized (builtin, S.empty)
+
+dbShowTy :: HasUnique (tyname ann) TypeUnique => Type tyname ann -> String
+dbShowTy = t
+  where t :: HasUnique (tyname ann) TypeUnique => Type tyname ann -> String
+        t (TyVar _ n) = tn n
+        t (TyFun _ arg res) = "(" ++ t arg ++ " -> " ++ t res ++ ")"
+        t (TyIFix _ ty1 ty2) = "(IFix " ++ t ty1 ++ " @@ " ++ t ty2 ++ ")"
+        t (TyForall _ n k ty) = "(\\/ " ++ tn n ++ ". " ++ t ty ++ ")"
+        t (TyBuiltin _ n) = "(TBtin " ++ show n ++ ")"
+        t (TyLam _ n k ty) = "( /\\ " ++ tn n ++ ". " ++ t ty ++ ")"
+        t (TyApp _ fun arg) = "(TApp " ++ t fun ++ " ## " ++ t arg ++ ")" 
+        tn :: HasUnique (tyname ann) TypeUnique => tyname ann -> String
+        tn n = show $ unUnique $ unTypeUnique $ n ^. unique
 
 {- Note [Normalizing substitution]
 @substituteNormalize[M]@ is only ever used as normalizing substitution that receives two already
@@ -198,6 +274,14 @@ substNormalizeTypeM
     -> Type tyname ann                                             -- ^ @body@
     -> NormalizeTypeT m tyname ann (Normalized (Type tyname ann))  -- ^ @NORM ([ty / name] body)@
 substNormalizeTypeM ty name = withExtendedTypeVarEnv name ty . normalizeTypeM
+
+substNormalizeTypeM'
+    :: (HasUnique (tyname ann) TypeUnique, MonadQuote m)
+    => Normalized (Type tyname ann)                                -- ^ @ty@
+    -> tyname ann                                                  -- ^ @name@
+    -> Type tyname ann                                             -- ^ @body@
+    -> NormalizeTypeT m tyname ann (Normalized (Type tyname ann, Set (TypeUnique, TypeUnique)))  -- ^ @NORM ([ty / name] body)@
+substNormalizeTypeM' ty name = withExtendedTypeVarEnv name ty . normalizeTypeM'
 
 -- | Normalize every 'Type' in a 'Term'.
 normalizeTypesInM

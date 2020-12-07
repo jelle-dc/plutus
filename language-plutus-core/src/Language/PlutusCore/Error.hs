@@ -109,6 +109,7 @@ data TypeError ann
     | FreeTypeVariableE (TyName ann)
     | FreeVariableE (Name ann)
     | OutOfGas
+    | Other String
     deriving (Show, Eq, Generic, NFData)
 makeClassyPrisms ''TypeError
 

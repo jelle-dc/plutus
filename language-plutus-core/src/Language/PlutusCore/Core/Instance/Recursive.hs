@@ -7,9 +7,13 @@ module Language.PlutusCore.Core.Instance.Recursive
       TermF (..)
     , TypeF (..)
     , KindF (..)
+    , BiTermF (..)
+    , ETermF (..)
     ) where
 
 import           Language.PlutusCore.Core.Type
+import           Language.PlutusCore.Core.BiType
+import           PlutusPrelude
 
 import           Data.Functor.Foldable
 
@@ -41,9 +45,34 @@ data TermF tyname name ann x
     | ErrorF ann (Type tyname ann)
     deriving (Functor, Traversable, Foldable)
 
+data BiTermF tyname name ann x
+    = BiVarF ann (name ann)
+    | BiLamAbsF ann (name ann) x
+    | BiApplyF ann x x
+    | BiConstantF ann (Constant ann)
+    | BiBuiltinF ann (Builtin ann)
+    | BiUnwrapF ann x
+    | BiIWrapF ann (Type tyname ann) (Type tyname ann) x
+    | BiErrorF ann (Type tyname ann)
+    | TyAnnF ann x (Type tyname ann)
+    deriving (Functor, Traversable, Foldable)
+
+data ETermF name ann x
+    = EVarF ann (name ann)
+    | ELamAbsF ann (name ann) x
+    | EApplyF ann x x
+    | EConstantF ann (Constant ann)
+    | EBuiltinF ann (Builtin ann)
+    | EUnwrapF ann x
+    | EIWrapF ann x
+    | EErrorF ann
+    deriving (Functor, Traversable, Foldable)
+
 type instance Base (Kind ann) = KindF ann
 type instance Base (Type tyname ann) = TypeF tyname ann
 type instance Base (Term tyname name ann) = TermF tyname name ann
+type instance Base (BiTerm tyname name ann) = BiTermF tyname name ann
+type instance Base (ETerm name ann) = ETermF name ann
 
 instance Recursive (Kind ann) where
     project (Type ann)           = TypeF ann
@@ -94,3 +123,45 @@ instance Corecursive (Term tyname name ann) where
     embed (UnwrapF ann t)        = Unwrap ann t
     embed (IWrapF ann pat arg t) = IWrap ann pat arg t
     embed (ErrorF ann ty)        = Error ann ty
+
+instance Recursive (BiTerm tyname name ann) where
+    project (BiVar ann n)           = BiVarF ann n
+    project (BiLamAbs ann n t)      = BiLamAbsF ann n t
+    project (BiApply ann t t')      = BiApplyF ann t t'
+    project (BiConstant ann c)      = BiConstantF ann c
+    project (BiBuiltin ann bi)      = BiBuiltinF ann bi
+    project (BiUnwrap ann t)        = BiUnwrapF ann t
+    project (BiIWrap ann pat arg t) = BiIWrapF ann pat arg t
+    project (BiError ann ty)        = BiErrorF ann ty
+    project (TyAnn ann t ty)        = TyAnnF ann t ty
+
+instance Corecursive (BiTerm tyname name ann) where
+    embed (BiVarF ann n)           = BiVar ann n
+    embed (BiLamAbsF ann n t)      = BiLamAbs ann n t
+    embed (BiApplyF ann t t')      = BiApply ann t t'
+    embed (BiConstantF ann c)      = BiConstant ann c
+    embed (BiBuiltinF ann bi)      = BiBuiltin ann bi
+    embed (BiUnwrapF ann t)        = BiUnwrap ann t
+    embed (BiIWrapF ann pat arg t) = BiIWrap ann pat arg t
+    embed (BiErrorF ann ty)        = BiError ann ty
+    embed (TyAnnF ann t ty)        = TyAnn ann t ty
+
+instance Recursive (ETerm name ann) where
+    project (EVar ann n)           = EVarF ann n
+    project (ELamAbs ann n t)      = ELamAbsF ann n t
+    project (EApply ann t t')      = EApplyF ann t t'
+    project (EConstant ann c)      = EConstantF ann c
+    project (EBuiltin ann bi)      = EBuiltinF ann bi
+    project (EUnwrap ann t)        = EUnwrapF ann t
+    project (EIWrap ann t) = EIWrapF ann t
+    project (EError ann)        = EErrorF ann
+
+instance Corecursive (ETerm name ann) where
+    embed (EVarF ann n)           = EVar ann n
+    embed (ELamAbsF ann n t)      = ELamAbs ann n t
+    embed (EApplyF ann t t')      = EApply ann t t'
+    embed (EConstantF ann c)      = EConstant ann c
+    embed (EBuiltinF ann bi)      = EBuiltin ann bi
+    embed (EUnwrapF ann t)        = EUnwrap ann t
+    embed (EIWrapF ann t) = EIWrap ann t
+    embed (EErrorF ann)        = EError ann

@@ -12,6 +12,7 @@ import           PlutusPrelude
 
 import           Language.PlutusCore.Core.Instance.Pretty.Classic ()
 import           Language.PlutusCore.Core.Type
+import           Language.PlutusCore.Core.BiType
 import           Language.PlutusCore.Pretty.Classic
 
 instance Pretty (Kind ann) where
@@ -20,9 +21,22 @@ instance Pretty (Constant ann) where
     pretty = prettyClassicDef
 instance Pretty (Builtin ann) where
     pretty = prettyClassicDef
+
+ -- FIXME
+instance
+        ( PrettyClassic (tyname ann)
+        , PrettyClassic (name ann)
+        ) => Pretty (BiTerm tyname name ann) where
+    pretty = prettyClassicDef
+
 instance PrettyClassic (tyname ann) => Pretty (Type tyname ann) where
     pretty = prettyClassicDef
 instance (PrettyClassic (tyname ann), PrettyClassic (name ann)) => Pretty (Term tyname name ann) where
     pretty = prettyClassicDef
 instance (PrettyClassic (tyname ann), PrettyClassic (name ann)) => Pretty (Program tyname name ann) where
+    pretty = prettyClassicDef
+instance
+        ( PrettyClassic (tyname ann)
+        , PrettyClassic (name ann)
+        ) => Pretty (BiProgram tyname name ann) where
     pretty = prettyClassicDef

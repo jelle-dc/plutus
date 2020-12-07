@@ -14,6 +14,7 @@ module Language.PlutusCore.Untyped.Convert (
                                 , changeNamesUntyped
                                 , anonProgram
                                 , removeNameStrings
+                                , removeNameStringsBi
                                 , IntName (..)
                                 , StringlessName (..)
                                 , StringlessTyName (..)
@@ -133,10 +134,25 @@ changeNamesTerm f g = \case
            PLC.IWrap x ty ty' e -> PLC.IWrap x (changeNamesTy g ty) (changeNamesTy g ty') (changeNamesTerm f g e)
            PLC.Error x ty       -> PLC.Error x (changeNamesTy g ty)
 
+changeNamesBiTerm ::  (n1 ann -> n2 ann) -> (tn1 ann -> tn2 ann) -> PLC.BiTerm tn1 n1 ann -> PLC.BiTerm tn2 n2 ann
+changeNamesBiTerm f g = \case
+           PLC.BiVar x n          -> PLC.BiVar x (f n)
+           PLC.BiLamAbs x n e     -> PLC.BiLamAbs x (f n) (changeNamesBiTerm f g e)
+           PLC.BiApply x e1 e2    -> PLC.BiApply x (changeNamesBiTerm f g e1) (changeNamesBiTerm f g e2)
+           PLC.BiConstant x c     -> PLC.BiConstant x c
+           PLC.BiBuiltin x b      -> PLC.BiBuiltin x b
+           PLC.BiUnwrap x e       -> PLC.BiUnwrap x (changeNamesBiTerm f g e)
+           PLC.BiIWrap x ty ty' e -> PLC.BiIWrap x (changeNamesTy g ty) (changeNamesTy g ty') (changeNamesBiTerm f g e)
+           PLC.BiError x ty       -> PLC.BiError x (changeNamesTy g ty)
+           PLC.TyAnn x e ty       -> PLC.TyAnn x (changeNamesBiTerm f g e) (changeNamesTy g ty)
+
 -- Map f over names, g over type names
 changeNamesProgram :: (n1 ann -> n2 ann) -> (tn1 ann -> tn2 ann) -> PLC.Program tn1 n1 ann -> PLC.Program tn2  n2 ann
 changeNamesProgram f g (PLC.Program ann version body) = PLC.Program ann version (changeNamesTerm f g body)
 
+-- Map f over names, g over type names
+changeNamesBiProgram :: (n1 ann -> n2 ann) -> (tn1 ann -> tn2 ann) -> PLC.BiProgram tn1 n1 ann -> PLC.BiProgram tn2  n2 ann
+changeNamesBiProgram f g (PLC.BiProgram ann version body) = PLC.BiProgram ann version (changeNamesBiTerm f g body)
 
 -- Replace names with empty strings in typed programs
 anonProgram :: PLC.Program N.TyName N.Name ann -> PLC.Program N.TyName N.Name ann
@@ -161,6 +177,10 @@ removeNameStrings = changeNamesProgram f g
               where f (N.Name ann _ u) = StringlessName ann u
                     g (N.TyName n) = StringlessTyName (f n)
 
+removeNameStringsBi :: PLC.BiProgram N.TyName N.Name ann -> PLC.BiProgram StringlessTyName StringlessName ann
+removeNameStringsBi = changeNamesBiProgram f g
+              where f (N.Name ann _ u) = StringlessName ann u
+                    g (N.TyName n) = StringlessTyName (f n)
 
 -- Changing names in untyped code
 

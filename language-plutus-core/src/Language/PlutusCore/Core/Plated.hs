@@ -17,9 +17,11 @@ module Language.PlutusCore.Core.Plated
     , termSubtermsDeep
     , typeUniquesDeep
     , termUniquesDeep
+    , biTermUniquesDeep
     ) where
 
 import           Language.PlutusCore.Core.Type
+import           Language.PlutusCore.Core.BiType
 import           Language.PlutusCore.Name
 
 import           Control.Lens
@@ -93,6 +95,14 @@ termUniques f = \case
     Var ann n -> theUnique f n <&> Var ann
     x -> pure x
 
+-- | Get all the direct child 'Unique's of the given 'Term' (including the type-level ones).
+biTermUniques :: HasUniques (BiTerm tyname name ann) => Traversal' (BiTerm tyname name ann) Unique
+biTermUniques f = \case
+    -- get tyvars from annotation ???
+    BiLamAbs ann n t -> theUnique f n <&> \n' -> BiLamAbs ann n' t
+    BiVar ann n -> theUnique f n <&> BiVar ann
+    x -> pure x
+
 {-# INLINE termSubtypes #-}
 -- | Get all the direct child 'Type's of the given 'Term'.
 termSubtypes :: Traversal' (Term tyname name ann) (Type tyname ann)
@@ -107,6 +117,20 @@ termSubtypes f = \case
     v@Var {} -> pure v
     c@Constant {} -> pure c
     b@Builtin {} -> pure b
+
+{-# INLINE biTermSubtypes #-}
+-- | Get all the direct child 'Type's of the given 'Term'.
+biTermSubtypes :: Traversal' (BiTerm tyname name ann) (Type tyname ann)
+biTermSubtypes f = \case
+    BiIWrap ann ty1 ty2 t -> BiIWrap ann <$> f ty1 <*> f ty2 <*> pure t
+    BiError ann ty -> BiError ann <$> f ty
+    l@BiLamAbs {} -> pure l
+    a@BiApply {} -> pure a
+    u@BiUnwrap {} -> pure u
+    v@BiVar {} -> pure v
+    c@BiConstant {} -> pure c
+    b@BiBuiltin {} -> pure b
+    TyAnn ann t ty -> TyAnn ann t <$> f ty
 
 -- | Get all the transitive child 'Type's of the given 'Term'.
 termSubtypesDeep :: Fold (Term tyname name ann) (Type tyname ann)
@@ -127,9 +151,26 @@ termSubterms f = \case
     c@Constant {} -> pure c
     b@Builtin {} -> pure b
 
+{-# INLINE biTermSubterms #-}
+biTermSubterms :: Traversal' (BiTerm tyname name ann) (BiTerm tyname name ann)
+biTermSubterms f = \case
+    BiLamAbs ann n t -> BiLamAbs ann n <$> f t
+    BiIWrap ann ty1 ty2 t -> BiIWrap ann ty1 ty2 <$> f t
+    BiApply ann t1 t2 -> BiApply ann <$> f t1 <*> f t2
+    BiUnwrap ann t -> BiUnwrap ann <$> f t
+    e@BiError {} -> pure e
+    v@BiVar {} -> pure v
+    c@BiConstant {} -> pure c
+    b@BiBuiltin {} -> pure b
+    TyAnn ann t ty -> TyAnn ann <$> f t <*> pure ty
+
 -- | Get all the transitive child 'Term's of the given 'Term'.
 termSubtermsDeep :: Fold (Term tyname name ann) (Term tyname name ann)
 termSubtermsDeep = cosmosOf termSubterms
+
+-- | Get all the transitive child 'Term's of the given 'Term'.
+biTermSubtermsDeep :: Fold (BiTerm tyname name ann) (BiTerm tyname name ann)
+biTermSubtermsDeep = cosmosOf biTermSubterms
 
 -- | Get all the transitive child 'Unique's of the given 'Type'.
 typeUniquesDeep :: HasUniques (Type tyname ann) => Fold (Type tyname ann) Unique
@@ -138,3 +179,7 @@ typeUniquesDeep = typeSubtypesDeep . typeUniques
 -- | Get all the transitive child 'Unique's of the given 'Term' (including the type-level ones).
 termUniquesDeep :: HasUniques (Term tyname name ann) => Fold (Term tyname name ann) Unique
 termUniquesDeep = termSubtermsDeep . (termSubtypes . typeUniquesDeep <^> termUniques)
+
+-- | Get all the transitive child 'Unique's of the given 'Term' (including the type-level ones).
+biTermUniquesDeep :: HasUniques (BiTerm tyname name ann) => Fold (BiTerm tyname name ann) Unique
+biTermUniquesDeep = biTermSubtermsDeep . (biTermSubtypes . typeUniquesDeep <^> biTermUniques)

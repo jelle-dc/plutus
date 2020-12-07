@@ -9,6 +9,7 @@ module Language.PlutusCore.Rename
     ( Rename (..)
     , Dupable
     , liftDupable
+    , liftDupable'
     ) where
 
 import           PlutusPrelude
@@ -20,6 +21,7 @@ import           Language.PlutusCore.Rename.Internal
 import           Language.PlutusCore.Core
 
 import           Data.Functor.Identity
+import           Data.Set
 
 {- Note [Marking]
 We use functions from the @markNonFresh*@ family in order to ensure that bound variables never get
@@ -46,6 +48,10 @@ instance HasUniques (Term tyname name ann) => Rename (Term tyname name ann) wher
     -- See Note [Marking].
     rename = through markNonFreshTerm >=> runRenameT . renameTermM
 
+instance HasUniques (BiTerm tyname name ann) => Rename (BiTerm tyname name ann) where
+    -- See Note [Marking].
+    rename = through markNonFreshBiTerm >=> runRenameT . renameBiTermM
+
 instance HasUniques (Program tyname name ann) => Rename (Program tyname name ann) where
     -- See Note [Marking].
     rename = through markNonFreshProgram >=> runRenameT . renameProgramM
@@ -69,3 +75,6 @@ newtype Dupable a = Dupable
 -- | Extract the value stored in a @Dupable a@ and rename it.
 liftDupable :: (MonadQuote m, Rename a) => Dupable a -> m a
 liftDupable = liftQuote . rename . unDupable
+
+liftDupable' :: (MonadQuote m, HasUniques (Type tyname ann)) => Dupable (Normalized (Type tyname ann)) -> m (Type tyname ann, Set (TypeUnique, TypeUnique))
+liftDupable' = liftQuote . runRenameT' @TypeRenaming . renameTypeM' . unNormalized . unDupable

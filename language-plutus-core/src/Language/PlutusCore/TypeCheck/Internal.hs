@@ -13,6 +13,7 @@ module Language.PlutusCore.TypeCheck.Internal
     ( DynamicBuiltinNameTypes (..)
     , TypeCheckConfig (..)
     , TypeCheckM
+    , TypeCheckEnv
     , tccDoNormTypes
     , tccDynamicBuiltinNameTypes
     , tccMayGas
@@ -25,6 +26,14 @@ module Language.PlutusCore.TypeCheck.Internal
     , typeOfBuiltinName
     , inferTypeM
     , checkTypeM
+    , lookupVarM
+    , withVar
+    , withTyVar
+    , normalizeTypeOptM
+    , substNormalizeTypeM
+    , inferTypeOfBuiltinM
+    , unfoldFixOf
+    , dummyType
     ) where
 
 import           Language.PlutusCore.Constant

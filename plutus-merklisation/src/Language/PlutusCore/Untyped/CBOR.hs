@@ -209,6 +209,7 @@ deriving newtype instance (Serialise a) => Serialise (PLC.Normalized a)
 
 deriving instance Serialise Index
 
+  {-
 instance Serialise a => Serialise (DeBruijn a) where
     encode (DeBruijn x txt i) = encode x <> encode txt <> encode i
     decode = DeBruijn <$> decode <*> decode <*> decode
@@ -216,7 +217,7 @@ instance Serialise a => Serialise (DeBruijn a) where
 instance Serialise a => Serialise (TyDeBruijn a) where
     encode (TyDeBruijn n) = encode n
     decode = TyDeBruijn <$> decode
-
+-}
 {-
 instance (Serialise a) => Serialise (ParseError a)
 instance (Serialise a) => Serialise (UniqueError a)

@@ -13,6 +13,7 @@ import           PlutusPrelude
 import           Language.PlutusCore.Core.Instance.Pretty.Common ()
 import           Language.PlutusCore.Core.Instance.Recursive
 import           Language.PlutusCore.Core.Type
+import           Language.PlutusCore.Core.BiType
 import           Language.PlutusCore.Pretty.Classic
 import           Language.PlutusCore.Pretty.Utils
 
@@ -45,8 +46,10 @@ instance PrettyClassicBy configName (tyname a) =>
 
         prettyName = prettyBy config
 
-instance (PrettyClassicBy configName (tyname a), PrettyClassicBy configName (name a)) =>
-        PrettyBy (PrettyConfigClassic configName) (Term tyname name a) where
+instance
+        ( PrettyClassicBy configName (tyname a)
+        , PrettyClassicBy configName (name a)
+        ) => PrettyBy (PrettyConfigClassic configName) (Term tyname name a) where
     prettyBy config = cata a where
         a (ConstantF _ b)      = parens' ("con" </> prettyBy config b)
         a (BuiltinF _ bi)      = parens' ("builtin" </> prettyBy config bi)
@@ -63,7 +66,31 @@ instance (PrettyClassicBy configName (tyname a), PrettyClassicBy configName (nam
         prettyName :: PrettyClassicBy configName n => n -> Doc ann
         prettyName = prettyBy config
 
+instance
+        ( PrettyClassicBy configName (tyname a)
+        , PrettyClassicBy configName (name a)
+        ) => PrettyBy (PrettyConfigClassic configName) (BiTerm tyname name a) where
+    prettyBy config = cata a where
+        a (BiConstantF _ b)      = parens' ("con" </> prettyBy config b)
+        a (BiBuiltinF _ bi)      = parens' ("builtin" </> prettyBy config bi)
+        a (BiApplyF _ t t')      = brackets' (vsep' [t, t'])
+        a (BiVarF _ n)           = prettyName n
+        -- FIXME: only do the </> thing when there's a line break in the `vsep'` part?
+        a (BiLamAbsF _ n t)      = parens' ("lam" </> vsep' [prettyName n, t])
+        a (BiUnwrapF _ t)        = parens' ("unwrap" </> t)
+        a (BiIWrapF _ pat arg t) = parens' ("iwrap" </> vsep' [prettyBy config pat, prettyBy config arg, t])
+        a (BiErrorF _ ty)        = parens' ("error" </> prettyBy config ty)
+        a (TyAnnF _ tm ty)       = parens' ("ann" </> vsep' [prettyBy config ty, tm])
+
+        prettyName :: PrettyClassicBy configName n => n -> Doc ann
+        prettyName = prettyBy config
+
 instance PrettyClassicBy configName (Term tyname name a) =>
         PrettyBy (PrettyConfigClassic configName) (Program tyname name a) where
     prettyBy config (Program _ version term) =
+        parens' $ "program" <+> pretty version <//> prettyBy config term
+
+instance PrettyClassicBy configName (BiTerm tyname name a) =>
+        PrettyBy (PrettyConfigClassic configName) (BiProgram tyname name a) where
+    prettyBy config (BiProgram _ version term) =
         parens' $ "program" <+> pretty version <//> prettyBy config term

@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE BangPatterns          #-}
 -- | Support for using de Bruijn indices for term and type names.
 module Language.PlutusCore.DeBruijn
     ( Index (..)
@@ -12,6 +13,8 @@ module Language.PlutusCore.DeBruijn
     , deBruijnTy
     , deBruijnTerm
     , deBruijnProgram
+    , deBruijnBiProgram
+    , deBruijnBiPLCProgram
     , unDeBruijnTy
     , unDeBruijnTerm
     , unDeBruijnProgram
@@ -34,6 +37,8 @@ import           Data.Typeable
 import           Numeric.Natural
 
 import           GHC.Generics
+
+import           Debug.Trace
 
 -- | A relative index used for de Bruijn identifiers.
 newtype Index = Index Natural
@@ -103,8 +108,7 @@ levelToIndex (Level current) (Level l) = current - l
 
 -- | Declare a name with a unique, recording the mapping to a 'Level'.
 declareUnique :: (MonadReader Levels m, HasUnique name unique) => name -> m a -> m a
-declareUnique n =
-    local $ \(Levels current ls) -> Levels current $ BM.insert (n ^. theUnique) current ls
+declareUnique n = local $ \(Levels current ls) -> Levels current $ BM.insert (n ^. theUnique) current ls
 
 -- | Declare a name with an index, recording the mapping from the corresponding 'Level' to a fresh unique.
 declareIndex :: (MonadReader Levels m, MonadQuote m, HasIndex name) => name -> m a -> m a
@@ -172,12 +176,51 @@ deBruijnTerm
     => Term TyName Name ann -> m (Term TyDeBruijn DeBruijn ann)
 deBruijnTerm = flip runReaderT (Levels 0 BM.empty) . deBruijnTermM
 
+deBruijnBiTerm
+    :: (Show ann, MonadError FreeVariableError m)
+    => BiTerm TyName Name ann -> m (BiTerm TyDeBruijn DeBruijn ann)
+deBruijnBiTerm = flip runReaderT (Levels 0 BM.empty) . deBruijnBiTermM
+
 -- | Convert a 'Program' with 'TyName's and 'Name's into a 'Program' with 'TyDeBruijn's and 'DeBruijn's.
 deBruijnProgram
     :: MonadError FreeVariableError m
     => Program TyName Name ann -> m (Program TyDeBruijn DeBruijn ann)
 deBruijnProgram (Program ann ver term) = Program ann ver <$> deBruijnTerm term
 
+deBruijnBiProgram
+    :: (Show ann, MonadError FreeVariableError m)
+    => BiProgram TyName Name ann -> m (BiProgram TyDeBruijn DeBruijn ann)
+deBruijnBiProgram (BiProgram ann ver term) = BiProgram ann ver <$> deBruijnBiTerm term
+  
+deBruijnBiPLCProgram :: Show ann => BiProgram TyName Name ann -> BiProgram TyDeBruijn DeBruijn ann
+deBruijnBiPLCProgram p = case runExceptT $ deBruijnBiProgram p of
+     Left e -> error e
+     Right y ->
+         case y of
+           Left freeVarError -> error ("Error: " ++ show freeVarError)
+           Right t           -> t
+
+show' :: Show ann => BiTerm TyName Name ann -> String
+show' (BiVar      _ n)          = show $ unUnique $ nameUnique n
+show' (BiLamAbs   _ n   tm)     = "(\\ " ++ (show $ unUnique $ nameUnique n) ++ " . " ++ show' tm ++ ")"
+show' (BiApply    _ tm1 tm2)    = "[" ++ show' tm1 ++ " " ++ show' tm2 ++  "]"
+show' (BiConstant _ c)          = "(" ++ show c ++ ")"
+show' (BiBuiltin  _ b)          = "(" ++ show b ++ ")"
+show' (BiUnwrap   _ tm)         = "(Unwrap " ++ show' tm ++ ")" 
+show' (BiIWrap    _ ty1 ty2 tm) = "(Wrap " ++ showTy ty1 ++ showTy ty2 ++ show' tm ++ ")"
+show' (BiError    _ ty)         = "(Error " ++ showTy ty ++ ")"
+show' (TyAnn      _ tm  ty)     = "(" ++ show' tm ++ " :: " ++ showTy ty ++ ")"
+
+showTy :: Type TyName ann -> String
+showTy (TyVar _ n)       = "TY:" ++ (show $ unUnique $ nameUnique $ unTyName n)
+showTy (TyFun _ ty1 ty2) = "{" ++ showTy ty1 ++ " -> " ++ showTy ty2 ++ "}"
+showTy (TyIFix _ ty1 ty2) = "{Fix " ++ showTy ty1 ++ " " ++ showTy ty2 ++ "}"
+showTy (TyForall _ n _ ty) = "{\\/ " ++ (show $ unUnique $ nameUnique $ unTyName n) ++ " . " ++ showTy ty ++ "}"
+showTy (TyBuiltin _ b)     = "{" ++ show b ++ "}"
+showTy (TyLam _ n _ ty) = "{/\\ " ++ (show $ unUnique $ nameUnique $ unTyName n) ++ " . " ++ showTy ty ++ "}"
+showTy (TyApp _ ty1 ty2) = "<" ++ showTy ty1 ++ " " ++ showTy ty2 ++ ">"
+
+  
 {- Note [De Bruijn conversion and recursion schemes]
 These are quite repetitive, but we can't use a catamorphism for this, because
 we are not only altering the recursive type, but also the name type parameters.
@@ -227,6 +270,34 @@ deBruijnTermM = \case
     -- boring non-recursive cases
     Constant ann con -> pure $ Constant ann con
     Builtin ann bn -> pure $ Builtin ann bn
+
+deBruijnBiTermM
+    :: (Show ann, MonadReader Levels m, MonadError FreeVariableError m)
+    => BiTerm TyName Name ann
+    -> m (BiTerm TyDeBruijn DeBruijn ann)
+deBruijnBiTermM = \case
+    -- variable case
+    BiVar ann n -> BiVar ann <$> nameToDeBruijn n
+    -- binder cases
+    BiLamAbs ann n t -> declareUnique n $ do
+        n' <- nameToDeBruijn n
+        withScope $ BiLamAbs ann n' <$> deBruijnBiTermM t
+    -- boring recursive cases
+    BiApply ann t1 t2 -> BiApply ann <$> deBruijnBiTermM t1 <*> deBruijnBiTermM t2
+    BiUnwrap ann t -> BiUnwrap ann <$> deBruijnBiTermM t
+    BiIWrap ann pat arg t -> BiIWrap ann <$> deBruijnTyM pat <*> deBruijnTyM arg <*> deBruijnBiTermM t
+    BiError ann ty -> BiError ann <$> deBruijnTyM ty
+    -- boring non-recursive cases
+    BiConstant ann con -> pure $ BiConstant ann con
+    BiBuiltin ann bn -> pure $ BiBuiltin ann bn
+    TyAnn ann tm ty -> declareAll ty $ do
+        TyAnn ann <$> deBruijnBiTermM tm <*> deBruijnTyM ty
+      where declareAll (TyForall _ tn _ ty) c = declareUnique tn $ withScope (declareAll ty c)
+            declareAll (TyFun _ ty1 ty2)    c = declareAll ty1 (declareAll ty2 c)
+            declareAll (TyIFix _ ty1 ty2)   c = declareAll ty1 (declareAll ty2 c)
+            declareAll (TyLam _ _ _ ty1)    c = declareAll ty1 c
+            declareAll (TyApp _ ty1 ty2)    c = declareAll ty1 (declareAll ty2 c)
+            declareAll _                    c = c
 
 -- | Convert a 'Type' with 'TyDeBruijn's into a 'Type' with 'TyName's.
 unDeBruijnTy

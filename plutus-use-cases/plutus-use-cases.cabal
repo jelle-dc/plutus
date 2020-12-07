@@ -68,7 +68,8 @@ library
         template-haskell -any,
         lens -any,
         text -any,
-        prettyprinter -any
+        prettyprinter -any,
+        serialise -any
 
     if flag(defer-plugin-errors)
         ghc-options: -fplugin-opt Language.PlutusTx.Plugin:defer-errors

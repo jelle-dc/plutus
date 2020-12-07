@@ -1,5 +1,6 @@
 module Language.PlutusCore.Mark
     ( markNonFreshTerm
+    , markNonFreshBiTerm
     , markNonFreshType
     , markNonFreshProgram
     ) where
@@ -22,6 +23,13 @@ markNonFreshTerm
     :: (HasUniques (Term tyname name ann), MonadQuote m)
     => Term tyname name ann -> m ()
 markNonFreshTerm = markNonFreshMax . uniquesTerm
+
+-- | Marks all the 'Unique's in a term as used, so they will not be generated in future. Useful if you
+-- have a term which was not generated in 'Quote'.
+markNonFreshBiTerm
+    :: (HasUniques (BiTerm tyname name ann), MonadQuote m)
+    => BiTerm tyname name ann -> m ()
+markNonFreshBiTerm = markNonFreshMax . uniquesBiTerm
 
 -- | Marks all the 'Unique's in a program as used, so they will not be generated in future. Useful if you
 -- have a program which was not generated in 'Quote'.
